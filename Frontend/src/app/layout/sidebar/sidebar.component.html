@@ -1,0 +1,85 @@
+@if (open()) {
+  <button
+    type="button"
+    class="fixed inset-0 z-40 bg-black/40 md:hidden"
+    aria-label="Fechar menu"
+    (click)="closeSidebar.emit()"
+  ></button>
+}
+
+<aside
+  class="fixed inset-y-0 left-0 z-50 flex w-[260px] flex-col bg-inverse-surface py-6 text-inverse-on-surface shadow-xl transition-transform duration-200 md:translate-x-0 md:shadow-none"
+  [class.-translate-x-full]="!open()"
+  [class.translate-x-0]="open()"
+>
+  <div class="mb-8 flex items-center gap-3 px-6">
+    <div
+      class="flex size-10 shrink-0 items-center justify-center rounded bg-primary-container text-white"
+    >
+      <span class="material-symbols-outlined" aria-hidden="true">headset_mic</span>
+    </div>
+    <div class="min-w-0">
+      <p class="truncate text-lg font-bold">IT Helpdesk</p>
+      <p class="text-[11px] font-semibold uppercase tracking-[0.08em] text-secondary-fixed-dim">
+        Outlook Integrated
+      </p>
+    </div>
+    <button
+      type="button"
+      class="ml-auto rounded p-1 text-outline-variant hover:bg-white/10 md:hidden"
+      aria-label="Fechar menu"
+      (click)="closeSidebar.emit()"
+    >
+      <span class="material-symbols-outlined" aria-hidden="true">close</span>
+    </button>
+  </div>
+
+  <nav class="flex-1 space-y-1 px-2" aria-label="Navegação principal">
+    <button
+      class="nav-item"
+      type="button"
+      disabled
+      title="Dashboard previsto para uma próxima fase"
+    >
+      <span class="material-symbols-outlined" aria-hidden="true">dashboard</span>
+      <span>Dashboard</span>
+    </button>
+
+    <a
+      class="nav-item"
+      routerLink="/tickets"
+      routerLinkActive="nav-item-active"
+      (click)="closeSidebar.emit()"
+    >
+      <span class="material-symbols-outlined" aria-hidden="true">confirmation_number</span>
+      <span>Tickets</span>
+    </a>
+
+    <button
+      class="nav-item"
+      type="button"
+      disabled
+      title="Relatórios previstos para uma próxima fase"
+    >
+      <span class="material-symbols-outlined" aria-hidden="true">assessment</span>
+      <span>Relatórios</span>
+    </button>
+
+    <button
+      class="nav-item"
+      type="button"
+      disabled
+      title="Configurações previstas para uma próxima fase"
+    >
+      <span class="material-symbols-outlined" aria-hidden="true">settings</span>
+      <span>Configurações</span>
+    </button>
+  </nav>
+
+  <div class="px-2">
+    <button class="nav-item" type="button" disabled title="Perfil disponível após a autenticação">
+      <span class="material-symbols-outlined" aria-hidden="true">account_circle</span>
+      <span>Perfil</span>
+    </button>
+  </div>
+</aside>

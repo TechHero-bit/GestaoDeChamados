@@ -1,0 +1,123 @@
+<section class="border-t border-outline-variant bg-surface p-4" aria-labelledby="reply-heading">
+  <h3 id="reply-heading" class="sr-only">Responder via e-mail</h3>
+  <div
+    class="overflow-hidden rounded-lg border border-outline-variant bg-white transition focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/20"
+  >
+    <div
+      class="flex items-center gap-1 border-b border-outline-variant/50 bg-surface-container-low p-2"
+    >
+      <button
+        class="toolbar-button"
+        type="button"
+        disabled
+        title="Formatação em negrito ainda não disponível"
+        aria-label="Negrito indisponível"
+      >
+        <span class="material-symbols-outlined text-xl" aria-hidden="true">format_bold</span>
+      </button>
+      <button
+        class="toolbar-button"
+        type="button"
+        disabled
+        title="Formatação em itálico ainda não disponível"
+        aria-label="Itálico indisponível"
+      >
+        <span class="material-symbols-outlined text-xl" aria-hidden="true">format_italic</span>
+      </button>
+      <span class="mx-1 h-4 w-px bg-outline-variant" aria-hidden="true"></span>
+      <button
+        class="toolbar-button"
+        type="button"
+        disabled
+        title="Listas ainda não disponíveis"
+        aria-label="Lista indisponível"
+      >
+        <span class="material-symbols-outlined text-xl" aria-hidden="true"
+          >format_list_bulleted</span
+        >
+      </button>
+      <button
+        class="toolbar-button"
+        type="button"
+        disabled
+        title="Links ainda não disponíveis"
+        aria-label="Link indisponível"
+      >
+        <span class="material-symbols-outlined text-xl" aria-hidden="true">link</span>
+      </button>
+      <button
+        class="toolbar-button"
+        type="button"
+        disabled
+        title="Anexos dependem do fluxo do Power Automate"
+        aria-label="Anexo indisponível"
+      >
+        <span class="material-symbols-outlined text-xl" aria-hidden="true">attach_file</span>
+      </button>
+      <span class="ml-auto hidden text-sm text-outline sm:inline">Responder via e-mail</span>
+    </div>
+
+    <textarea
+      class="min-h-32 w-full resize-y border-0 bg-transparent p-3 text-sm leading-6 outline-none placeholder:text-outline md:text-base"
+      [placeholder]="'Digite sua resposta para ' + requester() + '...'"
+      maxlength="10000"
+      [(ngModel)]="message"
+      [disabled]="sending()"
+      (keydown.control.enter)="send()"
+    ></textarea>
+
+    @if (error()) {
+      <p class="mx-3 mb-2 flex items-center gap-1 text-sm text-error" role="alert">
+        <span class="material-symbols-outlined text-lg" aria-hidden="true">error</span>
+        {{ error() }}
+      </p>
+    }
+    @if (sentNotice()) {
+      <p class="mx-3 mb-2 flex items-center gap-1 text-sm text-[#2E7D32]" role="status">
+        <span class="material-symbols-outlined text-lg" aria-hidden="true">check_circle</span>
+        Resposta enviada e adicionada à conversa.
+      </p>
+    }
+
+    <footer
+      class="flex flex-col items-stretch justify-between gap-3 border-t border-outline-variant/40 p-3 sm:flex-row sm:items-center"
+    >
+      <button
+        class="ghost-button justify-center sm:justify-start"
+        type="button"
+        disabled
+        title="Respostas rápidas ainda não disponíveis"
+      >
+        <span class="material-symbols-outlined text-lg" aria-hidden="true">smart_toy</span>
+        Usar resposta rápida
+      </button>
+      <div class="flex items-center justify-end gap-2">
+        <button
+          class="secondary-button hidden sm:inline-flex"
+          type="button"
+          disabled
+          title="Rascunhos ainda não disponíveis"
+        >
+          Salvar rascunho
+        </button>
+        <button
+          class="primary-button min-w-28 justify-center"
+          type="button"
+          [disabled]="!message.trim() || sending()"
+          (click)="send()"
+        >
+          @if (sending()) {
+            <span class="material-symbols-outlined animate-spin text-lg" aria-hidden="true"
+              >progress_activity</span
+            >
+            Enviando
+          } @else {
+            <span class="material-symbols-outlined text-lg" aria-hidden="true">send</span>
+            Enviar
+          }
+        </button>
+      </div>
+    </footer>
+  </div>
+  <p class="mt-2 text-right text-xs text-outline">Atalho: Ctrl + Enter</p>
+</section>

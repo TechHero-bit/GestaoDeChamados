@@ -1,0 +1,48 @@
+<section class="card overflow-hidden" aria-labelledby="properties-heading">
+  <header class="card-header">
+    <span class="material-symbols-outlined text-outline" aria-hidden="true">label</span>
+    <h3 id="properties-heading" class="font-semibold">Propriedades</h3>
+  </header>
+  <div class="space-y-4 p-4">
+    <div>
+      <label for="detail-status" class="field-label">Status</label>
+      <select
+        id="detail-status"
+        class="w-full rounded border border-outline-variant bg-surface px-3 py-2 text-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/20 disabled:cursor-wait disabled:opacity-60"
+        [ngModel]="ticket().status"
+        [disabled]="saving()"
+        (ngModelChange)="statusChanged.emit($event)"
+      >
+        <option value="Aberto">Aberto</option>
+        <option value="Em Andamento">Em Andamento</option>
+        <option value="Resolvido">Resolvido</option>
+      </select>
+      @if (saving()) {
+        <p class="mt-1 text-xs text-outline">Salvando alteração...</p>
+      }
+      @if (error()) {
+        <p class="mt-1 text-xs text-error" role="alert">{{ error() }}</p>
+      }
+    </div>
+
+    <div>
+      <div class="mb-1 flex items-center justify-between gap-2">
+        <span class="field-label mb-0">Atribuição</span>
+        <button
+          type="button"
+          class="primary-button px-3 py-1.5 text-xs"
+          disabled
+          title="Atribuição depende de usuários e autenticação"
+        >
+          Atribuir
+        </button>
+      </div>
+      <div
+        class="flex items-center gap-2 rounded border border-outline-variant bg-surface-container-low p-2 text-sm text-on-surface-variant"
+      >
+        <span class="material-symbols-outlined text-lg" aria-hidden="true">person_off</span>
+        Não atribuído
+      </div>
+    </div>
+  </div>
+</section>

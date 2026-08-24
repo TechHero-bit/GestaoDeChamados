@@ -1,0 +1,78 @@
+<main class="mx-auto w-full max-w-[1440px] p-4 md:p-6">
+  <a
+    routerLink="/tickets"
+    class="mb-4 inline-flex items-center gap-1 text-sm font-semibold text-primary hover:underline"
+  >
+    <span class="material-symbols-outlined text-lg" aria-hidden="true">arrow_back</span>
+    Voltar para a fila
+  </a>
+
+  @if (loading()) {
+    <div class="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px]" aria-label="Carregando chamado">
+      <div class="card min-h-[620px] p-6">
+        <span class="skeleton mb-3 block h-6 w-36"></span>
+        <span class="skeleton block h-8 w-3/4"></span>
+        <span class="skeleton mt-10 block h-44 w-full"></span>
+        <span class="skeleton mt-6 ml-auto block h-36 w-4/5"></span>
+      </div>
+      <div class="space-y-4">
+        <span class="skeleton block h-52 w-full rounded-lg"></span>
+        <span class="skeleton block h-56 w-full rounded-lg"></span>
+      </div>
+    </div>
+  } @else if (error()) {
+    <div class="card mx-auto max-w-xl p-8 text-center" role="alert">
+      <span class="material-symbols-outlined mb-3 text-5xl text-error" aria-hidden="true"
+        >error</span
+      >
+      <h2 class="text-xl font-semibold">Não foi possível abrir o chamado</h2>
+      <p class="mt-2 text-on-surface-variant">{{ error() }}</p>
+      <a routerLink="/tickets" class="primary-button mt-5 inline-flex">Voltar para a fila</a>
+    </div>
+  } @else if (ticket(); as currentTicket) {
+    <div class="grid items-start gap-4 lg:grid-cols-[minmax(0,1fr)_320px]">
+      <section class="card overflow-hidden">
+        <header class="border-b border-outline-variant bg-surface p-4 md:p-6">
+          <div
+            class="mb-2 flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center"
+          >
+            <div class="flex flex-wrap items-center gap-3">
+              <span class="font-mono text-sm font-semibold md:text-lg">{{
+                shortTicketId(currentTicket.id)
+              }}</span>
+              <app-status-badge [status]="currentTicket.status" />
+            </div>
+            <p
+              class="flex items-center gap-1 text-sm text-outline"
+              [title]="currentTicket.data_criacao"
+            >
+              <span class="material-symbols-outlined text-lg" aria-hidden="true">schedule</span>
+              Criado {{ relativeDate(currentTicket.data_criacao) }}
+            </p>
+          </div>
+          <h2 class="text-xl font-semibold leading-7 text-on-background md:text-2xl md:leading-8">
+            {{ currentTicket.assunto }}
+          </h2>
+        </header>
+
+        <app-ticket-conversation [ticket]="currentTicket" />
+        <app-ticket-reply-editor
+          [ticketId]="currentTicket.id"
+          [requester]="requesterName(currentTicket.remetente_nome, currentTicket.remetente_email)"
+          (messageSent)="appendMessage($event)"
+        />
+      </section>
+
+      <aside class="space-y-4">
+        <app-ticket-requester-card [ticket]="currentTicket" />
+        <app-ticket-properties
+          [ticket]="currentTicket"
+          [saving]="savingStatus()"
+          [error]="statusError()"
+          (statusChanged)="updateStatus($event)"
+        />
+        <app-ticket-attachments />
+      </aside>
+    </div>
+  }
+</main>

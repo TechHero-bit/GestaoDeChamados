@@ -1,0 +1,51 @@
+<header
+  class="sticky top-0 z-30 flex h-16 items-center justify-between border-b border-outline-variant bg-surface/95 px-4 shadow-sm backdrop-blur md:px-6"
+>
+  <div class="flex items-center gap-3">
+    <button
+      type="button"
+      class="icon-button md:hidden"
+      aria-label="Abrir menu"
+      (click)="menuRequested.emit()"
+    >
+      <span class="material-symbols-outlined" aria-hidden="true">menu</span>
+    </button>
+    <h1 class="text-lg font-semibold text-on-surface sm:text-2xl">Helpdesk Central</h1>
+  </div>
+
+  <div class="flex items-center gap-1">
+    <button
+      class="icon-button"
+      type="button"
+      disabled
+      title="Notificações disponíveis em uma próxima fase"
+      aria-label="Notificações indisponíveis"
+    >
+      <span class="material-symbols-outlined" aria-hidden="true">notifications</span>
+    </button>
+    <button
+      class="icon-button hidden sm:inline-flex"
+      type="button"
+      disabled
+      title="Caixa de e-mail disponível em uma próxima fase"
+      aria-label="E-mail indisponível"
+    >
+      <span class="material-symbols-outlined" aria-hidden="true">mail</span>
+    </button>
+    <button
+      class="icon-button text-primary"
+      type="button"
+      disabled
+      title="A sincronização é executada pelo Power Automate"
+      aria-label="Sincronização automática"
+    >
+      <span class="material-symbols-outlined" aria-hidden="true">sync</span>
+    </button>
+    <div
+      class="ml-2 flex size-9 items-center justify-center rounded-full border border-outline-variant bg-primary-fixed text-xs font-bold text-on-primary-fixed"
+      title="Equipe de Help Desk"
+    >
+      HD
+    </div>
+  </div>
+</header>

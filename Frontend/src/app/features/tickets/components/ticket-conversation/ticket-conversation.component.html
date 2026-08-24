@@ -1,0 +1,17 @@
+<section
+  class="flex flex-col gap-6 bg-surface-bright p-4 md:p-6"
+  aria-label="Conversa do chamado"
+  aria-live="polite"
+>
+  @for (message of ticket().messages; track message.id) {
+    <app-ticket-message [message]="message" [ticket]="ticket()" />
+  } @empty {
+    <div class="py-12 text-center text-on-surface-variant">
+      <span class="material-symbols-outlined mb-2 text-4xl text-outline" aria-hidden="true"
+        >forum</span
+      >
+      <p class="font-semibold text-on-surface">Conversa ainda não registrada</p>
+      <p class="mt-1 text-sm">A mensagem original não está disponível na timeline.</p>
+    </div>
+  }
+</section>

@@ -1,0 +1,153 @@
+@import 'tailwindcss';
+
+@theme {
+  --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
+  --color-surface: #faf8ff;
+  --color-surface-bright: #faf8ff;
+  --color-surface-container-lowest: #ffffff;
+  --color-surface-container-low: #f2f3ff;
+  --color-surface-container: #ecedfa;
+  --color-surface-container-high: #e7e7f4;
+  --color-surface-container-highest: #e1e1ee;
+  --color-surface-variant: #e1e1ee;
+  --color-on-surface: #191b24;
+  --color-on-surface-variant: #424656;
+  --color-on-background: #191b24;
+  --color-inverse-surface: #2e303a;
+  --color-inverse-on-surface: #eff0fd;
+  --color-outline: #737687;
+  --color-outline-variant: #c3c6d8;
+  --color-primary: #004ccd;
+  --color-primary-container: #0f62fe;
+  --color-primary-fixed: #dbe1ff;
+  --color-primary-fixed-dim: #b4c5ff;
+  --color-on-primary: #ffffff;
+  --color-on-primary-fixed: #00174c;
+  --color-secondary-container: #e2dfde;
+  --color-secondary-fixed-dim: #c8c6c5;
+  --color-on-secondary-container: #636262;
+  --color-error: #ba1a1a;
+  --color-error-container: #ffdad6;
+  --color-on-error-container: #93000a;
+  --shadow-card: 0 2px 4px rgb(0 0 0 / 0.05);
+}
+
+@layer base {
+  * {
+    box-sizing: border-box;
+  }
+
+  html {
+    min-width: 320px;
+    background: var(--color-surface);
+  }
+
+  body {
+    min-height: 100dvh;
+    margin: 0;
+    background: var(--color-surface);
+    color: var(--color-on-surface);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  button,
+  input,
+  select,
+  textarea {
+    font: inherit;
+  }
+
+  button:focus-visible,
+  a:focus-visible,
+  input:focus-visible,
+  select:focus-visible,
+  textarea:focus-visible {
+    outline: 2px solid var(--color-primary);
+    outline-offset: 2px;
+  }
+}
+
+@layer components {
+  .card {
+    @apply rounded-lg border border-outline-variant bg-white shadow-card;
+  }
+
+  .card-header {
+    @apply flex items-center gap-2 border-b border-outline-variant bg-surface-container-low p-4;
+  }
+
+  .nav-item {
+    @apply flex w-full items-center gap-3 rounded px-4 py-3 text-left text-sm text-outline-variant transition-colors;
+  }
+
+  .nav-item:not(:disabled):hover {
+    @apply bg-white/10 text-inverse-on-surface;
+  }
+
+  .nav-item:disabled {
+    @apply cursor-not-allowed opacity-60;
+  }
+
+  .nav-item-active {
+    @apply rounded-l-none border-l-4 border-primary bg-primary/10 pl-3 text-primary-fixed-dim;
+  }
+
+  .icon-button {
+    @apply inline-flex size-10 items-center justify-center rounded-full text-on-surface-variant transition-colors hover:bg-surface-container-low hover:text-primary disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  .primary-button {
+    @apply inline-flex items-center gap-2 rounded-lg border border-primary-container bg-primary-container px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-primary hover:shadow disabled:cursor-not-allowed disabled:opacity-60;
+  }
+
+  .secondary-button {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg border border-outline-variant bg-transparent px-4 py-2 text-sm font-semibold text-on-surface-variant transition hover:border-primary/40 hover:bg-primary-fixed/30 hover:text-primary disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  .ghost-button {
+    @apply inline-flex items-center gap-1 rounded px-2 py-1.5 text-sm text-on-surface-variant transition hover:bg-surface-container-low hover:text-primary disabled:cursor-not-allowed disabled:opacity-50;
+  }
+
+  .toolbar-button {
+    @apply inline-flex size-8 items-center justify-center rounded text-on-surface-variant transition hover:bg-surface-variant disabled:cursor-not-allowed disabled:opacity-45;
+  }
+
+  .pagination-button {
+    @apply inline-flex size-9 items-center justify-center rounded border border-outline-variant bg-white text-on-surface-variant transition hover:border-primary hover:text-primary disabled:cursor-not-allowed disabled:opacity-40;
+  }
+
+  .field-label {
+    @apply mb-2 block text-xs font-semibold uppercase tracking-[0.05em] text-on-surface-variant;
+  }
+
+  .field-control {
+    @apply w-full border-0 border-b border-outline-variant bg-transparent py-2 pr-2 text-sm text-on-surface outline-none transition focus:border-primary focus:ring-0;
+  }
+
+  .status-badge {
+    @apply inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border px-2.5 py-1 text-xs font-semibold;
+  }
+
+  .table-heading {
+    @apply px-6 py-4 text-xs font-semibold uppercase tracking-wider text-on-surface-variant;
+  }
+
+  .table-cell {
+    @apply px-6 py-4 align-middle;
+  }
+
+  .skeleton {
+    @apply animate-pulse rounded bg-surface-container-highest;
+  }
+}
+
+.material-symbols-outlined {
+  font-variation-settings:
+    'FILL' 0,
+    'wght' 400,
+    'GRAD' 0,
+    'opsz' 24;
+  line-height: 1;
+}

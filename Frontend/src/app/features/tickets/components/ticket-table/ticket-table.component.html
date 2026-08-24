@@ -1,0 +1,89 @@
+<div class="overflow-x-auto">
+  <table class="w-full min-w-[860px] border-collapse text-left">
+    <thead>
+      <tr class="border-b border-outline-variant bg-surface-container-low/60">
+        <th class="table-heading">ID</th>
+        <th class="table-heading">Assunto (Outlook)</th>
+        <th class="table-heading">Usuário</th>
+        <th class="table-heading">Status</th>
+        <th class="table-heading">Data</th>
+        <th class="table-heading text-right">Ações</th>
+      </tr>
+    </thead>
+    <tbody class="divide-y divide-outline-variant/50">
+      @if (loading()) {
+        @for (row of skeletonRows; track row) {
+          <tr aria-hidden="true">
+            <td class="table-cell"><span class="skeleton block h-4 w-20"></span></td>
+            <td class="table-cell">
+              <span class="skeleton mb-2 block h-4 w-56"></span
+              ><span class="skeleton block h-3 w-40"></span>
+            </td>
+            <td class="table-cell"><span class="skeleton block h-7 w-32"></span></td>
+            <td class="table-cell"><span class="skeleton block h-7 w-24 rounded-full"></span></td>
+            <td class="table-cell"><span class="skeleton block h-4 w-28"></span></td>
+            <td class="table-cell"><span class="skeleton ml-auto block size-6"></span></td>
+          </tr>
+        }
+      } @else {
+        @for (ticket of tickets(); track ticket.id) {
+          <tr class="group transition-colors hover:bg-surface-container-low">
+            <td class="table-cell font-mono text-xs text-on-surface-variant">
+              <a class="hover:text-primary hover:underline" [routerLink]="['/tickets', ticket.id]">
+                {{ shortTicketId(ticket.id) }}
+              </a>
+            </td>
+            <td class="table-cell max-w-[360px]">
+              <a
+                class="block font-semibold text-on-surface hover:text-primary"
+                [routerLink]="['/tickets', ticket.id]"
+              >
+                {{ ticket.assunto }}
+              </a>
+              <p class="mt-0.5 max-w-[320px] truncate text-sm text-on-surface-variant">
+                {{ ticket.corpo_mensagem }}
+              </p>
+            </td>
+            <td class="table-cell">
+              <div class="flex items-center gap-2">
+                <span
+                  class="flex size-7 shrink-0 items-center justify-center rounded-full bg-secondary-container text-[10px] font-bold text-on-secondary-container"
+                >
+                  {{ initials(ticket.remetente_nome, ticket.remetente_email) }}
+                </span>
+                <span class="max-w-40 truncate text-sm">{{
+                  requesterName(ticket.remetente_nome, ticket.remetente_email)
+                }}</span>
+              </div>
+            </td>
+            <td class="table-cell"><app-status-badge [status]="ticket.status" /></td>
+            <td class="table-cell whitespace-nowrap text-sm text-on-surface-variant">
+              {{ formatDate(ticket.data_criacao) }}
+            </td>
+            <td class="table-cell text-right">
+              <a
+                class="icon-button inline-flex"
+                [routerLink]="['/tickets', ticket.id]"
+                [attr.aria-label]="'Abrir chamado ' + shortTicketId(ticket.id)"
+              >
+                <span class="material-symbols-outlined text-xl" aria-hidden="true">visibility</span>
+              </a>
+            </td>
+          </tr>
+        } @empty {
+          <tr>
+            <td colspan="6" class="px-6 py-16 text-center">
+              <span class="material-symbols-outlined mb-2 text-4xl text-outline" aria-hidden="true"
+                >inbox</span
+              >
+              <p class="font-semibold">Nenhum chamado encontrado</p>
+              <p class="mt-1 text-sm text-on-surface-variant">
+                Ajuste os filtros ou aguarde a chegada de novos e-mails.
+              </p>
+            </td>
+          </tr>
+        }
+      }
+    </tbody>
+  </table>
+</div>

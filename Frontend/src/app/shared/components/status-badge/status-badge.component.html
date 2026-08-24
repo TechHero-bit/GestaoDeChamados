@@ -1,0 +1,20 @@
+@switch (status()) {
+  @case ('Aberto') {
+    <span class="status-badge border-primary-fixed-dim bg-primary-fixed text-on-primary-fixed">
+      <span class="size-1.5 rounded-full bg-primary" aria-hidden="true"></span>
+      Aberto
+    </span>
+  }
+  @case ('Em Andamento') {
+    <span class="status-badge border-[#FFE0B2] bg-[#FFF3E0] text-[#E65100]">
+      <span class="size-1.5 rounded-full bg-[#E65100]" aria-hidden="true"></span>
+      Em Andamento
+    </span>
+  }
+  @case ('Resolvido') {
+    <span class="status-badge border-[#C8E6C9] bg-[#E8F5E9] text-[#2E7D32]">
+      <span class="size-1.5 rounded-full bg-[#2E7D32]" aria-hidden="true"></span>
+      Resolvido
+    </span>
+  }
+}
