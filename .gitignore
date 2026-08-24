@@ -37,3 +37,8 @@ Thumbs.db
 
 # Coverage
 coverage/
+
+# Database & Migrations
+database/
+database/migrations/
+database/Migrations/
