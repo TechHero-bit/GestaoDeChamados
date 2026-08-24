@@ -1,8 +1,18 @@
 import { Routes } from '@angular/router';
+import { authGuard } from './core/guards/auth.guard';
+import { guestGuard } from './core/guards/guest.guard';
 
 export const routes: Routes = [
   {
+    path: 'login',
+    title: 'Acessar o Sistema | Helpdesk Central',
+    canActivate: [guestGuard],
+    loadComponent: () =>
+      import('./features/auth/pages/login/login.page').then((module) => module.LoginPage),
+  },
+  {
     path: '',
+    canActivate: [authGuard],
     loadComponent: () =>
       import('./layout/app-shell/app-shell.component').then((module) => module.AppShellComponent),
     children: [

@@ -1,33 +1,88 @@
-import express from "express";
+import cookieParser from "cookie-parser";
 import cors from "cors";
+import express from "express";
 import helmet from "helmet";
+import { errorMiddleware } from "./middlewares/error.middleware.js";
+import authRoutes from "./routes/auth.routes.js";
 import ticketRoutes from "./routes/ticket.routes.js";
 import webhookRoutes from "./routes/webhook.routes.js";
-import { errorMiddleware } from "./middlewares/error.middleware.js";
 
 const app = express();
 
-// Segurança
-app.use(helmet());
+// Trust proxy para interpretação correta do IP real atrás da Vercel
+app.set("trust proxy", 1);
 
-// CORS — restrito ao frontend
+// Segurança com Helmet
 app.use(
-  cors({
-    origin: process.env.FRONTEND_URL || "http://localhost:4200",
-    methods: ["GET", "POST", "PUT", "DELETE"],
-    allowedHeaders: ["Content-Type", "x-webhook-secret"],
+  helmet({
+    contentSecurityPolicy: false, // Desabilitado na API REST para evitar conflito com Angular SPA
+    crossOriginResourcePolicy: { policy: "cross-origin" },
   }),
 );
 
-// Body parser com limite de tamanho
+// CORS — Origens permitidas com suporte a credentials (cookies HttpOnly)
+const allowedOrigins = (process.env.FRONTEND_URL || "http://localhost:4200")
+  .split(",")
+  .map((url) => url.trim())
+  .filter(Boolean);
+
+app.use(
+  cors({
+    origin: (origin, callback) => {
+      // Permite chamadas sem header origin (como testes locais, webhooks do Power Automate, etc.)
+      if (!origin) return callback(null, true);
+
+      if (allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+
+      // Permite previews da Vercel se configurado
+      if (
+        process.env.ALLOW_VERCEL_PREVIEWS === "true" &&
+        /^https:\/\/[a-zA-Z0-9_-]+\.vercel\.app$/.test(origin)
+      ) {
+        return callback(null, true);
+      }
+
+      return callback(new Error("Origem não permitida pela política CORS."));
+    },
+    credentials: true,
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allowedHeaders: [
+      "Content-Type",
+      "Authorization",
+      "x-webhook-secret",
+      "x-requested-with",
+    ],
+  }),
+);
+
+// Cookie Parser
+app.use(cookieParser());
+
+// Body parser com limite seguro de tamanho
 app.use(express.json({ limit: "100kb" }));
 
-// Health check
+// Prevenção de cache em endpoints de dados sensíveis e privados
+app.use((req, res, next) => {
+  if (req.path.startsWith("/api/tickets") || req.path.startsWith("/api/auth")) {
+    res.setHeader(
+      "Cache-Control",
+      "no-store, no-cache, must-revalidate, proxy-revalidate",
+    );
+    res.setHeader("Pragma", "no-cache");
+    res.setHeader("Expires", "0");
+  }
+  next();
+});
+
+// Health check público
 app.get("/health", (_req, res) => {
   res.json({ status: "ok" });
 });
 
-// Rotas
+// Rotas da API
+app.use("/api/auth", authRoutes);
 app.use("/api/tickets", ticketRoutes);
 app.use("/api/webhooks", webhookRoutes);
 

@@ -185,6 +185,7 @@ export async function responderTicket(req, res, next) {
       remetente_email: ticketService.getHelpdeskEmail(),
       destinatario_email: ticket.remetente_email,
       corpo_mensagem: resultado.data.mensagem,
+      created_by: req.user?.id,
     });
 
     return res.status(201).json({

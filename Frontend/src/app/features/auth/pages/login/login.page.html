@@ -1,0 +1,139 @@
+<main class="flex min-h-dvh flex-col items-center justify-center bg-surface p-4 sm:p-6">
+  <div class="w-full max-w-md space-y-6">
+    <!-- Identidade visual / Cabeçalho -->
+    <div class="flex flex-col items-center text-center">
+      <div
+        class="mb-3 flex size-12 items-center justify-center rounded-xl bg-primary-container text-white shadow-md shadow-primary-container/20"
+      >
+        <span class="material-symbols-outlined text-2xl" aria-hidden="true">headset_mic</span>
+      </div>
+      <h1 class="text-2xl font-bold tracking-tight text-on-surface sm:text-3xl">IT Helpdesk</h1>
+      <p class="mt-1 text-sm font-medium text-on-surface-variant">
+        Central de Atendimento e Gestão de Chamados
+      </p>
+    </div>
+
+    <!-- Card de Login -->
+    <div class="card p-6 shadow-card sm:p-8">
+      <div class="mb-6 border-b border-outline-variant/60 pb-4">
+        <h2 class="text-lg font-semibold text-on-surface">Acessar o Sistema</h2>
+        <p class="text-xs text-on-surface-variant">
+          Insira suas credenciais corporativas para continuar
+        </p>
+      </div>
+
+      <!-- Alerta de Sessão Expirada -->
+      @if (sessionExpired()) {
+        <div
+          class="mb-5 flex items-start gap-2.5 rounded-lg border border-amber-500/30 bg-amber-50 p-3.5 text-xs text-amber-900"
+          role="alert"
+        >
+          <span class="material-symbols-outlined text-lg text-amber-700" aria-hidden="true">
+            timer
+          </span>
+          <div>
+            <p class="font-semibold">Sessão encerrada</p>
+            <p class="mt-0.5">Sua sessão expirou por inatividade. Faça login novamente.</p>
+          </div>
+        </div>
+      }
+
+      <!-- Alerta de Erro de Login -->
+      @if (error()) {
+        <div
+          class="mb-5 flex items-start gap-2.5 rounded-lg border border-error/30 bg-error-container p-3.5 text-xs text-on-error-container"
+          role="alert"
+        >
+          <span class="material-symbols-outlined text-lg text-error" aria-hidden="true">
+            error
+          </span>
+          <div>
+            <p class="font-semibold">Falha na autenticação</p>
+            <p class="mt-0.5">{{ error() }}</p>
+          </div>
+        </div>
+      }
+
+      <!-- Formulário de Login -->
+      <form (ngSubmit)="onSubmit()" class="space-y-4" novalidate>
+        <div>
+          <label for="email-input" class="field-label">E-mail corporativo</label>
+          <div class="relative">
+            <input
+              id="email-input"
+              name="email"
+              type="email"
+              [(ngModel)]="email"
+              class="field-control pl-1 pr-8"
+              placeholder="ex: usuario@empresa.com"
+              required
+              autocomplete="email"
+              [disabled]="loading()"
+            />
+            <span
+              class="material-symbols-outlined pointer-events-none absolute right-1 top-2 text-lg text-outline"
+              aria-hidden="true"
+            >
+              mail
+            </span>
+          </div>
+        </div>
+
+        <div>
+          <div class="flex items-center justify-between">
+            <label for="password-input" class="field-label">Senha</label>
+          </div>
+          <div class="relative">
+            <input
+              id="password-input"
+              name="password"
+              [type]="showPassword() ? 'text' : 'password'"
+              [(ngModel)]="password"
+              class="field-control pl-1 pr-10"
+              placeholder="••••••••"
+              required
+              autocomplete="current-password"
+              [disabled]="loading()"
+            />
+            <button
+              type="button"
+              class="absolute right-0 top-1 p-1 text-outline hover:text-on-surface"
+              (click)="togglePasswordVisibility()"
+              [title]="showPassword() ? 'Ocultar senha' : 'Exibir senha'"
+              [attr.aria-label]="showPassword() ? 'Ocultar senha' : 'Exibir senha'"
+              tabindex="-1"
+            >
+              <span class="material-symbols-outlined text-lg" aria-hidden="true">
+                {{ showPassword() ? 'visibility_off' : 'visibility' }}
+              </span>
+            </button>
+          </div>
+        </div>
+
+        <div class="pt-2">
+          <button
+            type="submit"
+            class="primary-button w-full justify-center py-2.5 text-sm font-semibold"
+            [disabled]="loading()"
+          >
+            @if (loading()) {
+              <span class="material-symbols-outlined animate-spin text-lg" aria-hidden="true">
+                progress_activity
+              </span>
+              <span>Entrando...</span>
+            } @else {
+              <span class="material-symbols-outlined text-lg" aria-hidden="true">login</span>
+              <span>Entrar</span>
+            }
+          </button>
+        </div>
+      </form>
+    </div>
+
+    <!-- Informações de Segurança do Rodapé -->
+    <div class="flex items-center justify-center gap-1.5 text-center text-xs text-outline">
+      <span class="material-symbols-outlined text-sm" aria-hidden="true">lock</span>
+      <span>Acesso seguro com criptografia e controle de sessão</span>
+    </div>
+  </div>
+</main>

@@ -1,44 +1,123 @@
 # Helpdesk Central
 
-Sistema interno de gestão de chamados recebidos pelo Microsoft Outlook. O Power Automate entrega os e-mails ao backend Express, o Supabase persiste tickets e mensagens, e a equipe atende os chamados por uma interface Angular baseada nas telas do Stitch.
+Sistema corporativo de gestão de chamados integrado ao Microsoft Outlook, Power Automate, Supabase (PostgreSQL) e interface moderna em Angular com Tailwind CSS baseada nas telas do Stitch. Inclui sistema completo de autenticação com JWT via cookies HttpOnly, sessões seguras com expiração por inatividade (10 minutos), autorização por perfil (RBAC), rate limiting distribuído e arquitetura serverless pronta para deploy na Vercel.
 
-## Arquitetura
+---
+
+## Arquitetura Geral
 
 ```text
-Entrada:  Outlook → Power Automate → Express → Supabase
-Atendimento: Angular → Express → Supabase
-Resposta: Angular → Express → Power Automate → Outlook → Solicitante
+                     INTERNET
+                         │
+              ┌──────────┴──────────┐
+              │                     │
+              ▼                     ▼
+        Vercel Frontend       Vercel Backend
+            Angular              Express
+              │                     │
+              │  Cookie HttpOnly    │
+              └────────────────────►│
+                                    │
+                         ┌──────────┴──────────┐
+                         │                     │
+                         ▼                     ▼
+                     Supabase               Upstash
+                    PostgreSQL               Redis
+                         │               (Rate Limiting
+               ┌─────────┴─────────┐      Distribuído)
+               │                   │
+             users           user_sessions
+             tickets
+          ticket_messages
+
+
+                ENTRADA DE CHAMADOS
+
+Outlook
+   ↓
+Power Automate
+   ↓
+Webhook Secret (x-webhook-secret)
+   ↓
+Express
+   ↓
+Supabase
+
+
+                 RESPOSTA AO CLIENTE
+
+Usuário autenticado (Cookie HttpOnly)
+   ↓
+Angular
+   ↓
+Express (/api/tickets/:id/reply)
+   ↓
+Power Automate
+   ↓
+Outlook
+   ↓
+Solicitante
 ```
 
-O frontend nunca acessa o Supabase diretamente. Segredos e a chave `service_role` permanecem somente no backend.
+---
 
-## Estrutura
+## Estrutura do Monorepo
 
 ```text
 GestaoDeChamados/
-├── Backend/             API Node.js/Express em JavaScript (ES Modules)
-├── Frontend/            Angular standalone + Tailwind CSS
-├── database/migrations/ migrations PostgreSQL/Supabase
-└── README.md
+├── Backend/                 API Node.js/Express (ES Modules, JWT, jose, bcrypt, serverless)
+│   ├── api/index.js         Entrypoint serverless para Vercel Functions
+│   ├── scripts/             Script CLI para criação segura de administradores
+│   ├── src/                 Controllers, services, middlewares, schemas Zod, rotas
+│   ├── test/                Suíte de testes automatizados (node --test)
+│   └── vercel.json          Configuração de rotas e rewrites da Vercel
+├── Frontend/                Aplicação Angular standalone + Tailwind CSS
+│   ├── src/                 Páginas (/login, /tickets), guards, interceptors, services
+│   └── vercel.json          Rewrites para roteamento SPA no Angular
+├── database/migrations/     Migrations SQL versionadas para Supabase
+└── README.md                Documentação completa do projeto e deploy
 ```
 
-## Requisitos
+---
 
-- Node.js 20 ou superior
-- npm
-- Projeto no Supabase
-- Dois fluxos no Power Automate: entrada e saída de e-mail
+## 1. Banco de Dados (Supabase)
 
-## 1. Banco de dados
-
-Execute no SQL Editor do Supabase, nesta ordem:
+Execute no SQL Editor do Supabase, rigorosamente nesta ordem:
 
 1. `database/migrations/001_create_tickets.sql`
 2. `database/migrations/002_create_ticket_messages.sql`
+3. `database/migrations/003_create_users.sql`
+4. `database/migrations/004_create_user_sessions.sql`
+5. `database/migrations/005_audit_and_security.sql`
 
-As migrations criam os enums, tabelas, índices, trigger de atualização, relacionamento com exclusão em cascata e RLS restrita ao papel `service_role`.
+### Estrutura das Tabelas Principais:
+- **`users`**: Armazena colaboradores (`nome`, `email`, `password_hash`, `role: ADMIN | AGENT`, `ativo`, `ultimo_login`).
+- **`user_sessions`**: Gerencia sessões ativas (`user_id`, `jti`, `last_activity_at`, `expires_at`, `revoked_at`).
+- **`tickets`**: Dados principais do chamado (`assunto`, `remetente_email`, `status`, `outlook_message_id`).
+- **`ticket_messages`**: Timeline de mensagens com suporte ao campo `created_by` para auditoria.
 
-## 2. Backend
+---
+
+## 2. Inicialização do Primeiro Administrador
+
+Para inicializar o primeiro usuário administrador com segurança (sem credenciais fixas no Git):
+
+```bash
+cd Backend
+npm install
+npm run create-admin
+```
+
+O script interativo solicitará:
+1. Nome do administrador;
+2. E-mail corporativo;
+3. Senha (mínimo 8 caracteres) — será feito o hash com `bcryptjs` (salt rounds = 12).
+
+---
+
+## 3. Execução Local
+
+### Backend
 
 ```bash
 cd Backend
@@ -47,22 +126,31 @@ cp .env.example .env
 npm run dev
 ```
 
-Preencha o `.env`:
+Variáveis do `.env`:
 
-| Variável                      | Uso                                               |
-| ----------------------------- | ------------------------------------------------- |
-| `PORT`                        | Porta da API; padrão `3000`                       |
-| `SUPABASE_URL`                | URL do projeto Supabase                           |
-| `SUPABASE_SECRET_KEY`         | Chave `service_role`; nunca usar no frontend      |
-| `WEBHOOK_SECRET`              | Autentica o fluxo de entrada                      |
-| `FRONTEND_URL`                | Origem liberada no CORS                           |
-| `POWER_AUTOMATE_REPLY_URL`    | URL HTTP do fluxo de saída                        |
-| `POWER_AUTOMATE_REPLY_SECRET` | Autentica o backend no fluxo de saída             |
-| `HELPDESK_EMAIL`              | Caixa corporativa que envia e recebe as mensagens |
+| Variável | Descrição |
+| --- | --- |
+| `NODE_ENV` | `development` ou `production` |
+| `PORT` | Porta da API; padrão `3000` |
+| `SUPABASE_URL` | URL do projeto Supabase |
+| `SUPABASE_SECRET_KEY` | Chave `service_role` (nunca expor no frontend) |
+| `WEBHOOK_SECRET` | Segredo para autenticar webhook do Outlook |
+| `JWT_SECRET` | Segredo JWT com no mínimo 32 caracteres |
+| `JWT_COOKIE_NAME` | Nome do cookie de sessão (padrão `helpdesk_session`) |
+| `COOKIE_SAME_SITE` | `lax` (desenvolvimento) ou `none` (produção cross-site) |
+| `SESSION_IDLE_TIMEOUT_MINUTES` | Limite de inatividade (padrão `10`) |
+| `SESSION_ABSOLUTE_TIMEOUT_HOURS` | Limite máximo da sessão (padrão `8`) |
+| `FRONTEND_URL` | Origem liberada no CORS (ex: `http://localhost:4200`) |
+| `ALLOW_VERCEL_PREVIEWS` | `true` ou `false` para permitir previews da Vercel |
+| `POWER_AUTOMATE_REPLY_URL` | URL HTTP do fluxo de saída do Power Automate |
+| `POWER_AUTOMATE_REPLY_SECRET` | Segredo do fluxo de saída |
+| `HELPDESK_EMAIL` | E-mail corporativo do Help Desk |
+| `UPSTASH_REDIS_REST_URL` | URL do Upstash Redis (rate limiting distribuído) |
+| `UPSTASH_REDIS_REST_TOKEN` | Token do Upstash Redis |
 
-A API estará em `http://localhost:3000`; o health check é `GET /health`.
+A API iniciará em `http://localhost:3000`; o health check está em `GET /health`.
 
-## 3. Frontend
+### Frontend
 
 ```bash
 cd Frontend
@@ -70,72 +158,87 @@ npm install
 npm start
 ```
 
-Abra `http://localhost:4200`. Em desenvolvimento, a API é centralizada em `src/environments/environment.development.ts`. A build de produção usa `/api`, adequada para um proxy/reverse proxy no mesmo domínio.
+Abra `http://localhost:4200`.
 
-## Endpoints
+---
 
-| Método   | Rota                     | Descrição                     |
-| -------- | ------------------------ | ----------------------------- |
-| `GET`    | `/health`                | Estado da API                 |
-| `POST`   | `/api/webhooks/outlook`  | Recebe e-mail do Outlook      |
-| `GET`    | `/api/tickets`           | Lista e filtra chamados       |
-| `GET`    | `/api/tickets/:id`       | Retorna ticket e timeline     |
-| `PUT`    | `/api/tickets/:id`       | Atualiza o status             |
-| `DELETE` | `/api/tickets/:id`       | Exclui ticket e mensagens     |
-| `POST`   | `/api/tickets/:id/reply` | Envia e registra uma resposta |
+## 4. Endpoints da API
 
-A listagem aceita `status`, `search`, `date` (`AAAA-MM-DD`), `page` e `pageSize` (máximo 100).
+| Método | Rota | Autenticação | Descrição |
+| --- | --- | --- | --- |
+| `GET` | `/health` | Pública | Health check da API |
+| `POST` | `/api/auth/login` | Pública (Rate Limit 5/15m) | Login com e-mail/senha, emite cookie HttpOnly |
+| `POST` | `/api/auth/logout` | Autenticada | Revoga sessão server-side e limpa cookie |
+| `GET` | `/api/auth/me` | Autenticada | Retorna dados do usuário autenticado |
+| `POST` | `/api/auth/activity` | Autenticada | Touch de atividade throttled |
+| `POST` | `/api/webhooks/outlook` | `x-webhook-secret` | Recebe novos e-mails do Power Automate |
+| `GET` | `/api/tickets` | Autenticada (Rate Limit) | Lista e filtra chamados |
+| `GET` | `/api/tickets/:id` | Autenticada | Retorna ticket e histórico de mensagens |
+| `PUT` | `/api/tickets/:id` | Autenticada | Atualiza o status do chamado |
+| `DELETE` | `/api/tickets/:id` | Autenticada (Apenas `ADMIN`) | Exclui chamado e mensagens associadas |
+| `POST` | `/api/tickets/:id/reply` | Autenticada (Rate Limit 10/min) | Envia resposta ao solicitante via Outlook |
 
-## Power Automate — fluxo de entrada
+---
 
-1. Use o gatilho de novo e-mail do Outlook na caixa corporativa.
-2. Prossiga somente se o assunto contiver `(chamado)`.
-3. Adicione uma ação HTTP `POST` para `https://SEU_BACKEND/api/webhooks/outlook`.
-4. Envie `Content-Type: application/json` e `x-webhook-secret` com o mesmo valor de `WEBHOOK_SECRET`.
-5. Mapeie o corpo:
+## 5. Deploy na Vercel
 
-```json
-{
-  "message_id": "OUTLOOK-TESTE-0001",
-  "remetente_email": "joao@empresa.com",
-  "remetente_nome": "João Silva",
-  "assunto": "(chamado) Computador não inicia",
-  "corpo_mensagem": "Meu computador não está iniciando.",
-  "data_recebimento": "2026-08-20T15:00:00Z"
-}
-```
+O mesmo repositório Git alimenta dois projetos independentes na Vercel:
 
-O `message_id` é único. Repetir a entrega retorna `duplicate: true` sem criar outro ticket.
+### Projeto 1 — Frontend (Angular)
 
-## Power Automate — fluxo de saída
+1. No dashboard da Vercel, clique em **Add New... > Project** e selecione o repositório.
+2. Em **Root Directory**, defina: `Frontend`.
+3. O framework preset será detectado automaticamente como **Angular**.
+4. Em **Build Command**: `ng build` (padrão).
+5. Em **Output Directory**: `dist/frontend/browser` (padrão Angular 22).
+6. Configure as variáveis de ambiente necessárias (ex: `NG_APP_API_URL` caso utilize proxy reverso ou subdomínio).
+7. Clique em **Deploy**.
 
-Configure um segundo fluxo com gatilho HTTP. Valide `x-webhook-secret` contra `POWER_AUTOMATE_REPLY_SECRET`, use a ação “Enviar um e-mail” do Outlook e devolva uma resposta HTTP 2xx somente após o envio.
+### Projeto 2 — Backend (Express Serverless)
 
-O backend envia:
+1. No dashboard da Vercel, clique em **Add New... > Project** e importe o **mesmo** repositório Git.
+2. Em **Root Directory**, defina: `Backend`.
+3. O framework preset pode permanecer como **Other** (Node.js Serverless).
+4. Configure as seguintes **Environment Variables** no projeto:
+   - `NODE_ENV=production`
+   - `SUPABASE_URL=https://xxxx.supabase.co`
+   - `SUPABASE_SECRET_KEY=eyJhbGciOi...`
+   - `WEBHOOK_SECRET=sua-chave-webhook`
+   - `JWT_SECRET=chave-secreta-jwt-com-mais-de-32-caracteres`
+   - `JWT_COOKIE_NAME=helpdesk_session`
+   - `COOKIE_SAME_SITE=none` (se frontend e backend estiverem em subdomínios diferentes) ou `lax` (se utilizarem o mesmo domínio)
+   - `SESSION_IDLE_TIMEOUT_MINUTES=10`
+   - `SESSION_ABSOLUTE_TIMEOUT_HOURS=8`
+   - `FRONTEND_URL=https://seu-frontend.vercel.app`
+   - `ALLOW_VERCEL_PREVIEWS=true` (opcional, para testes de preview)
+   - `POWER_AUTOMATE_REPLY_URL=https://prod-xx.brazilsouth.logic.azure.com/...`
+   - `POWER_AUTOMATE_REPLY_SECRET=seu-segredo-de-resposta`
+   - `HELPDESK_EMAIL=helpdesk@empresa.com`
+   - `UPSTASH_REDIS_REST_URL=https://xxxx.upstash.io`
+   - `UPSTASH_REDIS_REST_TOKEN=AXXXXX...`
+5. Clique em **Deploy**.
 
-```json
-{
-  "ticket_id": "UUID",
-  "destinatario": "joao@empresa.com",
-  "assunto": "RE: (chamado) Computador não inicia",
-  "mensagem": "Olá João, estamos analisando seu chamado."
-}
-```
+---
 
-A mensagem de saída só é adicionada à timeline após o Power Automate confirmar o envio.
+## 6. Checklist de Homologação e Produção
 
-## Verificação
-
-```bash
-cd Backend
-npm test
-
-cd ../Frontend
-npm run build
-```
-
-Os testes locais não exercitam serviços externos. Para validar o fluxo completo, aplique as migrations, configure `.env`, envie duas vezes o mesmo payload de entrada e responda ao ticket pela tela de detalhes.
-
-## Escopo do MVP
-
-Funcionam: listagem, busca, filtros, paginação, detalhe, timeline, alteração de status e resposta via Power Automate. Dashboard, relatórios, autenticação, atribuição, anexos, rascunhos, rich text e respostas rápidas estão preparados visualmente, mas permanecem desabilitados até suas integrações existirem.
+- [ ] Git atualizado e sem arquivos `.env` ou secrets versionados
+- [ ] Build de produção do Frontend passa (`npm run build` em `Frontend/`)
+- [ ] Backend passa em todos os testes automatizados (`npm test` em `Backend/`)
+- [ ] Migrations 001 a 005 executadas no Supabase
+- [ ] Primeiro administrador criado com `npm run create-admin`
+- [ ] Projeto Frontend criado na Vercel com Root Directory `Frontend`
+- [ ] Projeto Backend criado na Vercel com Root Directory `Backend`
+- [ ] `SUPABASE_SECRET_KEY` configurada **exclusivamente** no Backend
+- [ ] `JWT_SECRET` configurada **exclusivamente** no Backend
+- [ ] Upstash Redis configurado no Backend para rate limiting distribuído
+- [ ] `FRONTEND_URL` apontando para o domínio oficial do frontend
+- [ ] Cookies `HttpOnly` e `Secure` validados em produção
+- [ ] Login e validação de credenciais testados
+- [ ] Logout revogando a sessão e limpando o cookie testado
+- [ ] Timeout de 10 minutos de inatividade testado (frontend e backend)
+- [ ] Atualização de página (F5) mantendo a sessão do usuário
+- [ ] Bloqueio de acesso a páginas privadas via Guard e botão voltar
+- [ ] Webhook do Outlook (`/api/webhooks/outlook`) funcionando com `x-webhook-secret`
+- [ ] Resposta ao chamado (`/api/tickets/:id/reply`) enviando e-mail via Power Automate
+- [ ] Exclusão de tickets restrita ao perfil `ADMIN`

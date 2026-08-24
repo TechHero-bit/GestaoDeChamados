@@ -14,7 +14,7 @@
 >
   <div class="mb-8 flex items-center gap-3 px-6">
     <div
-      class="flex size-10 shrink-0 items-center justify-center rounded bg-primary-container text-white"
+      class="flex size-10 shrink-0 items-center justify-center rounded bg-primary-container text-white shadow-sm"
     >
       <span class="material-symbols-outlined" aria-hidden="true">headset_mic</span>
     </div>
@@ -76,10 +76,22 @@
     </button>
   </nav>
 
-  <div class="px-2">
-    <button class="nav-item" type="button" disabled title="Perfil disponível após a autenticação">
-      <span class="material-symbols-outlined" aria-hidden="true">account_circle</span>
-      <span>Perfil</span>
+  <div class="border-t border-white/10 px-2 pt-4 space-y-1">
+    @if (currentUser()) {
+      <div class="px-4 py-2 text-xs">
+        <p class="truncate font-semibold text-inverse-on-surface">{{ currentUser()?.nome }}</p>
+        <p class="truncate text-outline-variant text-[11px]">{{ currentUser()?.email }}</p>
+      </div>
+    }
+
+    <button
+      class="nav-item text-red-300 hover:bg-red-500/10 hover:text-red-200"
+      type="button"
+      (click)="onLogout()"
+      title="Encerrar sessão"
+    >
+      <span class="material-symbols-outlined" aria-hidden="true">logout</span>
+      <span>Sair</span>
     </button>
   </div>
 </aside>

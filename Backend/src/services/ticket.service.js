@@ -209,6 +209,7 @@ export async function adicionarMensagem({
   destinatario_email,
   corpo_mensagem,
   outlook_message_id,
+  created_by,
 }) {
   const { data, error } = await getSupabase()
     .from("ticket_messages")
@@ -219,6 +220,7 @@ export async function adicionarMensagem({
       destinatario_email,
       corpo_mensagem,
       outlook_message_id: outlook_message_id || null,
+      created_by: created_by || null,
     })
     .select()
     .single();

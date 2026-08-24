@@ -7,14 +7,20 @@
   "scripts": {
     "dev": "node --watch src/server.js",
     "start": "node src/server.js",
-    "test": "node --test"
+    "test": "node --test",
+    "create-admin": "node scripts/create-admin.js"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.49.0",
+    "@upstash/ratelimit": "^2.0.8",
+    "@upstash/redis": "^1.38.2",
+    "bcryptjs": "^3.0.3",
+    "cookie-parser": "^1.4.7",
     "cors": "^2.8.5",
     "dotenv": "^16.4.7",
     "express": "^4.21.0",
     "helmet": "^8.0.0",
+    "jose": "^6.2.10",
     "zod": "^3.24.0"
   }
 }
