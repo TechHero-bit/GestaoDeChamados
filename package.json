@@ -1,0 +1,18 @@
+{
+  "name": "gestao-de-chamados",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Monorepo do Helpdesk Central — Gestão de Chamados com Angular e Express",
+  "workspaces": [
+    "Frontend",
+    "Backend"
+  ],
+  "scripts": {
+    "build": "npm run build --workspace=Frontend",
+    "build:frontend": "npm run build --workspace=Frontend",
+    "build:backend": "npm run build --workspace=Backend",
+    "start": "npm start --workspace=Frontend",
+    "dev:backend": "npm run dev --workspace=Backend",
+    "test": "npm test --workspace=Backend"
+  }
+}
