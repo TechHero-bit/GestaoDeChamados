@@ -5,7 +5,7 @@
   "rewrites": [
     {
       "source": "/api/(.*)",
-      "destination": "https://gestao-de-chamados-backend-tech-hero-bit-s-projects.vercel.app/api/$1"
+      "destination": "https://gestao-de-chamados-backend.vercel.app/api/$1"
     },
     {
       "source": "/(.*)",
