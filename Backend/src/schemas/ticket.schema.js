@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 const VALID_STATUSES = ["Aberto", "Em Andamento", "Resolvido"];
+const VALID_PRIORITIES = ["Baixa", "Normal", "Alta"];
 
 export const ticketIdSchema = z
   .string()
@@ -29,15 +30,31 @@ export const listTicketsQuerySchema = z.object({
 });
 
 /**
- * Schema para atualização de ticket (somente status).
+ * Schema para atualização de ticket.
+ * Campos desconhecidos continuam sendo descartados pelo Zod e, portanto,
+ * não chegam ao service como campos atualizáveis.
  */
 export const updateTicketSchema = z.object({
-  status: z.enum(VALID_STATUSES, {
-    errorMap: () => ({
-      message: `Status deve ser: ${VALID_STATUSES.join(", ")}`,
-    }),
-  }),
-});
+  status: z
+    .enum(VALID_STATUSES, {
+      errorMap: () => ({
+        message: `Status deve ser: ${VALID_STATUSES.join(", ")}`,
+      }),
+    })
+    .optional(),
+  prioridade: z
+    .enum(VALID_PRIORITIES, {
+      errorMap: () => ({
+        message: `Prioridade deve ser: ${VALID_PRIORITIES.join(", ")}`,
+      }),
+    })
+    .optional(),
+}).refine(
+  (dados) => dados.status !== undefined || dados.prioridade !== undefined,
+  {
+    message: "Informe ao menos um campo para atualizar.",
+  },
+);
 
 /**
  * Schema para resposta a um ticket.

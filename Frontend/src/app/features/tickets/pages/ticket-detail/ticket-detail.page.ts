@@ -1,7 +1,13 @@
 import { Component, inject, OnDestroy, OnInit, signal } from '@angular/core';
 import { ActivatedRoute, RouterLink } from '@angular/router';
 import { Subscription, finalize } from 'rxjs';
-import { TicketDetail, TicketMessage, TicketStatus } from '../../../../core/models/ticket.model';
+import {
+  TicketDetail,
+  TicketMessage,
+  TicketPriority,
+  TicketStatus,
+  TicketUpdatePayload,
+} from '../../../../core/models/ticket.model';
 import { TicketService } from '../../../../core/services/ticket.service';
 import { StatusBadgeComponent } from '../../../../shared/components/status-badge/status-badge.component';
 import {
@@ -33,13 +39,13 @@ export class TicketDetailPage implements OnInit, OnDestroy {
   private readonly ticketService = inject(TicketService);
   private readonly subscriptions = new Subscription();
   private loadRequest?: Subscription;
-  private statusRequest?: Subscription;
+  private ticketUpdateRequest?: Subscription;
 
   readonly ticket = signal<TicketDetail | null>(null);
   readonly loading = signal(true);
   readonly error = signal('');
-  readonly savingStatus = signal(false);
-  readonly statusError = signal('');
+  readonly savingProperties = signal(false);
+  readonly propertiesError = signal('');
   readonly shortTicketId = shortTicketId;
   readonly relativeDate = relativeDate;
   readonly requesterName = requesterName;
@@ -66,18 +72,33 @@ export class TicketDetailPage implements OnInit, OnDestroy {
 
   updateStatus(status: TicketStatus): void {
     const current = this.ticket();
-    if (!current || current.status === status || this.savingStatus()) return;
+    if (!current || current.status === status || this.savingProperties()) return;
 
-    this.statusRequest?.unsubscribe();
-    this.savingStatus.set(true);
-    this.statusError.set('');
-    this.statusRequest = this.ticketService
-      .atualizarStatus(current.id, status)
-      .pipe(finalize(() => this.savingStatus.set(false)))
+    this.updateTicket({ status });
+  }
+
+  updatePriority(prioridade: TicketPriority): void {
+    const current = this.ticket();
+    const currentPriority = current?.prioridade ?? 'Normal';
+    if (!current || currentPriority === prioridade || this.savingProperties()) return;
+
+    this.updateTicket({ prioridade });
+  }
+
+  private updateTicket(payload: TicketUpdatePayload): void {
+    const current = this.ticket();
+    if (!current) return;
+
+    this.ticketUpdateRequest?.unsubscribe();
+    this.savingProperties.set(true);
+    this.propertiesError.set('');
+    this.ticketUpdateRequest = this.ticketService
+      .atualizarTicket(current.id, payload)
+      .pipe(finalize(() => this.savingProperties.set(false)))
       .subscribe({
         next: (updated) =>
           this.ticket.update((ticket) => (ticket ? { ...ticket, ...updated } : ticket)),
-        error: (error: Error) => this.statusError.set(error.message),
+        error: (error: Error) => this.propertiesError.set(error.message),
       });
   }
 
@@ -90,6 +111,6 @@ export class TicketDetailPage implements OnInit, OnDestroy {
   ngOnDestroy(): void {
     this.subscriptions.unsubscribe();
     this.loadRequest?.unsubscribe();
-    this.statusRequest?.unsubscribe();
+    this.ticketUpdateRequest?.unsubscribe();
   }
 }

@@ -34,7 +34,7 @@ router.get(
   buscarTicket,
 );
 
-// PUT /api/tickets/:id — Atualizar status
+// PUT /api/tickets/:id — Atualizar campos permitidos do ticket
 router.put(
   "/:id",
   rateLimitMiddleware(generalLimiter, (req) => req.user?.id || getClientIp(req)),

@@ -9,13 +9,28 @@
       <select
         id="detail-status"
         class="w-full rounded border border-outline-variant bg-surface px-3 py-2 text-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/20 disabled:cursor-wait disabled:opacity-60"
-        [ngModel]="ticket().status"
+        [ngModel]="selectedStatus"
         [disabled]="saving()"
-        (ngModelChange)="statusChanged.emit($event)"
+        (ngModelChange)="onStatusChange($event)"
       >
         <option value="Aberto">Aberto</option>
         <option value="Em Andamento">Em Andamento</option>
         <option value="Resolvido">Resolvido</option>
+      </select>
+    </div>
+
+    <div>
+      <label for="detail-priority" class="field-label">Prioridade</label>
+      <select
+        id="detail-priority"
+        class="w-full rounded border border-outline-variant bg-surface px-3 py-2 text-sm outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/20 disabled:cursor-wait disabled:opacity-60"
+        [ngModel]="selectedPriority"
+        [disabled]="saving()"
+        (ngModelChange)="onPriorityChange($event)"
+      >
+        <option value="Baixa">Baixa</option>
+        <option value="Normal">Normal</option>
+        <option value="Alta">Alta</option>
       </select>
       @if (saving()) {
         <p class="mt-1 text-xs text-outline">Salvando alteração...</p>

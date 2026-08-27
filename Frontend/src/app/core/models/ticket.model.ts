@@ -1,4 +1,5 @@
 export type TicketStatus = 'Aberto' | 'Em Andamento' | 'Resolvido';
+export type TicketPriority = 'Baixa' | 'Normal' | 'Alta';
 export type TicketMessageDirection = 'Entrada' | 'Saida';
 
 export interface TicketMessage {
@@ -19,11 +20,14 @@ export interface Ticket {
   assunto: string;
   corpo_mensagem: string;
   status: TicketStatus;
+  prioridade: TicketPriority;
   outlook_message_id?: string | null;
   data_recebimento?: string | null;
   data_criacao: string;
   data_atualizacao: string;
 }
+
+export type TicketUpdatePayload = Partial<Pick<Ticket, 'status' | 'prioridade'>>;
 
 export interface TicketDetail extends Ticket {
   messages: TicketMessage[];

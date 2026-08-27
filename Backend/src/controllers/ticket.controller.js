@@ -99,14 +99,11 @@ export async function atualizarTicket(req, res, next) {
       });
     }
 
-    const ticket = await ticketService.atualizarStatus(
-      id,
-      resultado.data.status,
-    );
+    const ticket = await ticketService.atualizarTicket(id, resultado.data);
 
     return res.json({
       success: true,
-      message: "Status atualizado com sucesso.",
+      message: "Chamado atualizado com sucesso.",
       data: ticket,
     });
   } catch (error) {

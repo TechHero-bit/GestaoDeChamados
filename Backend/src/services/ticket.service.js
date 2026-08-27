@@ -7,11 +7,14 @@ const TICKET_FIELDS = [
   "assunto",
   "corpo_mensagem",
   "status",
+  "prioridade",
   "outlook_message_id",
   "data_recebimento",
   "data_criacao",
   "data_atualizacao",
 ].join(",");
+
+const UPDATEABLE_TICKET_FIELDS = new Set(["status", "prioridade"]);
 
 function databaseError(action, cause) {
   return Object.assign(new Error(`Não foi possível ${action}.`), {
@@ -184,16 +187,34 @@ export async function criar(dados) {
   return ticket;
 }
 
-export async function atualizarStatus(id, status) {
+export async function atualizarTicket(id, dados) {
+  const updates = Object.fromEntries(
+    Object.entries(dados || {}).filter(
+      ([field, value]) =>
+        UPDATEABLE_TICKET_FIELDS.has(field) && value !== undefined,
+    ),
+  );
+
+  if (Object.keys(updates).length === 0) {
+    throw Object.assign(
+      new Error("Informe ao menos um campo para atualizar."),
+      { statusCode: 400 },
+    );
+  }
+
   const { data, error } = await getSupabase()
     .from("tickets")
-    .update({ status })
+    .update(updates)
     .eq("id", id)
     .select(TICKET_FIELDS)
     .maybeSingle();
 
   if (error) throw databaseError("atualizar o chamado", error);
   return data;
+}
+
+export async function atualizarStatus(id, status) {
+  return atualizarTicket(id, { status });
 }
 
 export async function excluir(id) {

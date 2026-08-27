@@ -9,7 +9,9 @@ import {
   TicketListFilters,
   TicketListResponse,
   TicketMessage,
+  TicketPriority,
   TicketStatus,
+  TicketUpdatePayload,
 } from '../models/ticket.model';
 
 @Injectable({ providedIn: 'root' })
@@ -37,11 +39,19 @@ export class TicketService {
     );
   }
 
-  atualizarStatus(id: string, status: TicketStatus): Observable<Ticket> {
-    return this.http.put<ApiDataResponse<Ticket>>(`${this.apiUrl}/${id}`, { status }).pipe(
+  atualizarTicket(id: string, payload: TicketUpdatePayload): Observable<Ticket> {
+    return this.http.put<ApiDataResponse<Ticket>>(`${this.apiUrl}/${id}`, payload).pipe(
       map((response) => response.data),
       catchError((error) => this.handleError(error)),
     );
+  }
+
+  atualizarStatus(id: string, status: TicketStatus): Observable<Ticket> {
+    return this.atualizarTicket(id, { status });
+  }
+
+  atualizarPrioridade(id: string, prioridade: TicketPriority): Observable<Ticket> {
+    return this.atualizarTicket(id, { prioridade });
   }
 
   excluir(id: string): Observable<void> {

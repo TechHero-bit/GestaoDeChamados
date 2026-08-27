@@ -5,6 +5,7 @@ import app from "../src/app.js";
 import { AUTH_COOKIE_NAME } from "../src/config/auth-cookie.js";
 import { loginLimiter } from "../src/config/rate-limit.js";
 import { requireRole } from "../src/middlewares/role.middleware.js";
+import { updateTicketSchema } from "../src/schemas/ticket.schema.js";
 import * as authService from "../src/services/auth.service.js";
 import { sendTicketReply } from "../src/services/email.service.js";
 
@@ -136,6 +137,34 @@ test("POST /api/auth/login valida formato obrigatório de e-mail e senha", async
   const body = await response.json();
   assert.equal(body.success, false);
   assert.ok(Array.isArray(body.errors));
+});
+
+test("schema de atualização aceita status, prioridade ou ambos", () => {
+  assert.deepEqual(updateTicketSchema.parse({ prioridade: "Alta" }), {
+    prioridade: "Alta",
+  });
+  assert.deepEqual(updateTicketSchema.parse({ status: "Em Andamento" }), {
+    status: "Em Andamento",
+  });
+  assert.deepEqual(
+    updateTicketSchema.parse({ status: "Resolvido", prioridade: "Baixa" }),
+    { status: "Resolvido", prioridade: "Baixa" },
+  );
+});
+
+test("schema rejeita prioridade inválida e mantém campos não autorizados fora do payload", () => {
+  const invalidPriority = updateTicketSchema.safeParse({ prioridade: "Urgente" });
+  assert.equal(invalidPriority.success, false);
+  assert.equal(invalidPriority.error.issues[0].path[0], "prioridade");
+
+  const unauthorized = updateTicketSchema.safeParse({
+    prioridade: "Alta",
+    assunto: "não deve ser atualizado",
+  });
+  assert.deepEqual(unauthorized.data, { prioridade: "Alta" });
+
+  const withoutAllowedFields = updateTicketSchema.safeParse({ assunto: "teste" });
+  assert.equal(withoutAllowedFields.success, false);
 });
 
 // ==========================================

@@ -67,9 +67,10 @@
         <app-ticket-requester-card [ticket]="currentTicket" />
         <app-ticket-properties
           [ticket]="currentTicket"
-          [saving]="savingStatus()"
-          [error]="statusError()"
+          [saving]="savingProperties()"
+          [error]="propertiesError()"
           (statusChanged)="updateStatus($event)"
+          (priorityChanged)="updatePriority($event)"
         />
         <app-ticket-attachments />
       </aside>
