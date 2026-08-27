@@ -173,6 +173,7 @@ export async function responderTicket(req, res, next) {
     // 4. Enviar via Power Automate
     await sendTicketReply({
       ticketId: id,
+      messageId: ticket.outlook_message_id,
       destinatario: ticket.remetente_email,
       assunto: assuntoResposta,
       mensagem: resultado.data.mensagem,

@@ -269,6 +269,7 @@ test("serviço de e-mail envia o contrato esperado ao Power Automate", async () 
   try {
     await sendTicketReply({
       ticketId: "00000000-0000-4000-8000-000000000001",
+      messageId: "outlook-message-id-123",
       destinatario: "solicitante@example.com",
       assunto: "RE: Teste",
       mensagem: "Resposta",
@@ -278,6 +279,7 @@ test("serviço de e-mail envia o contrato esperado ao Power Automate", async () 
     assert.equal(captured.options.headers["x-webhook-secret"], "reply-secret");
     assert.deepEqual(JSON.parse(captured.options.body), {
       ticket_id: "00000000-0000-4000-8000-000000000001",
+      message_id: "outlook-message-id-123",
       destinatario: "solicitante@example.com",
       assunto: "RE: Teste",
       mensagem: "Resposta",

@@ -4,6 +4,7 @@
  */
 export async function sendTicketReply({
   ticketId,
+  messageId,
   destinatario,
   assunto,
   mensagem,
@@ -20,6 +21,7 @@ export async function sendTicketReply({
 
   const payload = {
     ticket_id: ticketId,
+    message_id: messageId,
     destinatario,
     assunto,
     mensagem,
