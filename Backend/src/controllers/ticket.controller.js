@@ -161,6 +161,8 @@ export async function responderTicket(req, res, next) {
       });
     }
 
+    const prioridade = ticket.prioridade ?? "Normal";
+
     // 3. Montar assunto de resposta (evitar múltiplos RE:)
     const assuntoOriginal = ticket.assunto.trim();
     const assuntoResposta = assuntoOriginal.toLowerCase().startsWith("re:")
@@ -174,6 +176,7 @@ export async function responderTicket(req, res, next) {
       destinatario: ticket.remetente_email,
       assunto: assuntoResposta,
       mensagem: resultado.data.mensagem,
+      prioridade,
     });
 
     // 5. Registrar mensagem de saída (somente após envio bem-sucedido)

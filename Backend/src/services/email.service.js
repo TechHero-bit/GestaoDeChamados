@@ -8,7 +8,15 @@ export async function sendTicketReply({
   destinatario,
   assunto,
   mensagem,
+  prioridade = "Normal",
 }) {
+  if (typeof messageId !== "string" || !messageId.trim()) {
+    throw Object.assign(
+      new Error("O chamado não possui identificador de mensagem para resposta."),
+      { statusCode: 400 },
+    );
+  }
+
   const replyUrl = process.env.POWER_AUTOMATE_REPLY_URL;
   const replySecret = process.env.POWER_AUTOMATE_REPLY_SECRET;
 
@@ -25,6 +33,7 @@ export async function sendTicketReply({
     destinatario,
     assunto,
     mensagem,
+    prioridade,
   };
 
   const headers = {

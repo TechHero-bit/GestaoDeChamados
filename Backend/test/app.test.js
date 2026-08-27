@@ -302,6 +302,7 @@ test("serviço de e-mail envia o contrato esperado ao Power Automate", async () 
       destinatario: "solicitante@example.com",
       assunto: "RE: Teste",
       mensagem: "Resposta",
+      prioridade: "Alta",
     });
 
     assert.equal(captured.url, process.env.POWER_AUTOMATE_REPLY_URL);
@@ -312,6 +313,7 @@ test("serviço de e-mail envia o contrato esperado ao Power Automate", async () 
       destinatario: "solicitante@example.com",
       assunto: "RE: Teste",
       mensagem: "Resposta",
+      prioridade: "Alta",
     });
   } finally {
     globalThis.fetch = nativeFetch;
@@ -320,5 +322,84 @@ test("serviço de e-mail envia o contrato esperado ao Power Automate", async () 
     if (previousSecret)
       process.env.POWER_AUTOMATE_REPLY_SECRET = previousSecret;
     else delete process.env.POWER_AUTOMATE_REPLY_SECRET;
+  }
+});
+
+async function captureReplyPayload(options = {}) {
+  const nativeFetch = globalThis.fetch;
+  const previousUrl = process.env.POWER_AUTOMATE_REPLY_URL;
+  let captured;
+
+  process.env.POWER_AUTOMATE_REPLY_URL =
+    "https://power-automate.example.test/reply";
+  globalThis.fetch = async (url, requestOptions) => {
+    captured = { url, requestOptions };
+    return new Response(null, { status: 204 });
+  };
+
+  try {
+    await sendTicketReply({
+      ticketId: "00000000-0000-4000-8000-000000000001",
+      messageId: "outlook-message-id-123",
+      destinatario: "solicitante@example.com",
+      assunto: "RE: Teste",
+      mensagem: "Resposta",
+      ...options,
+    });
+    return JSON.parse(captured.requestOptions.body);
+  } finally {
+    globalThis.fetch = nativeFetch;
+    if (previousUrl) process.env.POWER_AUTOMATE_REPLY_URL = previousUrl;
+    else delete process.env.POWER_AUTOMATE_REPLY_URL;
+  }
+}
+
+test("serviço de e-mail envia prioridade Baixa", async () => {
+  const payload = await captureReplyPayload({ prioridade: "Baixa" });
+  assert.equal(payload.prioridade, "Baixa");
+});
+
+test("serviço de e-mail envia prioridade Normal", async () => {
+  const payload = await captureReplyPayload({ prioridade: "Normal" });
+  assert.equal(payload.prioridade, "Normal");
+});
+
+test("serviço de e-mail usa prioridade Normal para ticket legado", async () => {
+  const payload = await captureReplyPayload();
+  assert.equal(payload.prioridade, "Normal");
+});
+
+test("serviço de e-mail não chama Power Automate sem message_id", async () => {
+  const nativeFetch = globalThis.fetch;
+  const previousUrl = process.env.POWER_AUTOMATE_REPLY_URL;
+  let called = false;
+
+  process.env.POWER_AUTOMATE_REPLY_URL =
+    "https://power-automate.example.test/reply";
+  globalThis.fetch = async () => {
+    called = true;
+    return new Response(null, { status: 204 });
+  };
+
+  try {
+    await assert.rejects(
+      sendTicketReply({
+        ticketId: "00000000-0000-4000-8000-000000000001",
+        messageId: "",
+        destinatario: "solicitante@example.com",
+        assunto: "RE: Teste",
+        mensagem: "Resposta",
+        prioridade: "Alta",
+      }),
+      (error) => {
+        assert.equal(error.statusCode, 400);
+        return true;
+      },
+    );
+    assert.equal(called, false);
+  } finally {
+    globalThis.fetch = nativeFetch;
+    if (previousUrl) process.env.POWER_AUTOMATE_REPLY_URL = previousUrl;
+    else delete process.env.POWER_AUTOMATE_REPLY_URL;
   }
 });
