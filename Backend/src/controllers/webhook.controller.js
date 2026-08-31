@@ -3,7 +3,7 @@ import * as ticketService from "../services/ticket.service.js";
 
 /**
  * POST /api/webhooks/outlook
- * Recebe e-mail do Power Automate e cria ticket.
+ * Recebe e-mail do Power Automate e cria ou anexa ao ticket da conversa.
  */
 export async function receberEmailOutlook(req, res, next) {
   try {
@@ -23,39 +23,29 @@ export async function receberEmailOutlook(req, res, next) {
 
     const dados = resultado.data;
 
-    // 2. Verificar duplicidade pelo message_id
-    const existente = await ticketService.buscarPorMessageId(dados.message_id);
-
-    if (existente) {
-      return res.status(200).json({
-        success: true,
-        duplicate: true,
-        message: "E-mail já processado.",
-        ticket_id: existente.id,
-      });
-    }
-
-    // 3. Criar ticket + mensagem de entrada
-    const ticket = await ticketService.criar({
+    // 2. Idempotência por message_id e, depois, correlação por conversation_id
+    const resultadoEntrada = await ticketService.processarEntrada({
       ...dados,
       payload_original: req.body,
     });
 
-    if (ticket.duplicate) {
+    if (resultadoEntrada.duplicate) {
       return res.status(200).json({
         success: true,
         duplicate: true,
         message: "E-mail já processado.",
-        ticket_id: ticket.id,
+        ticket_id: resultadoEntrada.ticket.id,
       });
     }
 
-    // 4. Retornar sucesso
+    // 3. Uma resposta da conversa cria somente uma mensagem no ticket existente
     return res.status(201).json({
       success: true,
       duplicate: false,
-      message: "Chamado criado com sucesso.",
-      ticket_id: ticket.id,
+      message: resultadoEntrada.threaded
+        ? "Mensagem adicionada ao chamado com sucesso."
+        : "Chamado criado com sucesso.",
+      ticket_id: resultadoEntrada.ticket.id,
     });
   } catch (error) {
     next(error);

@@ -18,6 +18,10 @@ function validationError(res, resultado, message = "Dados inválidos.") {
   });
 }
 
+export function getReplyMessageId(ticket) {
+  return ticket.outlook_last_message_id || ticket.outlook_message_id;
+}
+
 function parseTicketId(id, res) {
   const result = ticketIdSchema.safeParse(id);
   if (!result.success) {
@@ -172,7 +176,7 @@ export async function responderTicket(req, res, next) {
     // 4. Enviar via Power Automate
     await sendTicketReply({
       ticketId: id,
-      messageId: ticket.outlook_message_id,
+      messageId: getReplyMessageId(ticket),
       destinatario: ticket.remetente_email,
       assunto: assuntoResposta,
       mensagem: resultado.data.mensagem,

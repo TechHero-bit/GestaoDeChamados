@@ -9,6 +9,11 @@ export const webhookPayloadSchema = z.object({
     .trim()
     .min(1, "message_id não pode ser vazio."),
 
+  conversation_id: z
+    .string({ required_error: "conversation_id é obrigatório." })
+    .trim()
+    .min(1, "conversation_id não pode ser vazio."),
+
   remetente_email: z
     .string({ required_error: "remetente_email é obrigatório." })
     .trim()
