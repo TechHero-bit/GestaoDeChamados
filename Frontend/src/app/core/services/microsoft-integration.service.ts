@@ -19,27 +19,6 @@ export class MicrosoftIntegrationService {
     return this.http.post<{ success: boolean }>(`${this.apiUrl}/disconnect`, {});
   }
 
-  sendTestEmail(payload: {
-    destinatario: string;
-    assunto: string;
-    mensagem: string;
-  }): Observable<{ success: boolean; message: string }> {
-    return this.http.post<{ success: boolean; message: string }>(
-      `${this.apiUrl}/test-email`,
-      payload,
-    );
-  }
-
-  sendTestTicketReply(
-    ticketId: string,
-    payload: { mensagem: string },
-  ): Observable<{ success: boolean; message: string }> {
-    return this.http.post<{ success: boolean; message: string }>(
-      `${this.apiUrl}/test-ticket-reply/${encodeURIComponent(ticketId)}`,
-      payload,
-    );
-  }
-
   connect(): void {
     // A navegação completa preserva o redirect OAuth e evita XHR/interceptor.
     this.authService.beginExternalAuth();

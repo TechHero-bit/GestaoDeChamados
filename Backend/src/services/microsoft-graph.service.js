@@ -90,16 +90,43 @@ function graphReplyError(status) {
       code: "GRAPH_MESSAGE_NOT_FOUND",
       message: "A mensagem original não foi encontrada na conta Microsoft conectada.",
     },
+    408: {
+      code: "GRAPH_REQUEST_REJECTED",
+      message: "A Microsoft não processou a resposta dentro do prazo.",
+      safeToFallback: true,
+    },
+    429: {
+      code: "GRAPH_RATE_LIMITED",
+      message: "A Microsoft limitou temporariamente o envio da resposta.",
+      safeToFallback: true,
+    },
   };
-  const details = errors[status] || {
-    code: "GRAPH_REPLY_FAILED",
-    message: "A Microsoft não aceitou a resposta da mensagem.",
-  };
+  const details =
+    errors[status] ||
+    (status >= 500 && status <= 599
+      ? {
+          code: "GRAPH_TEMPORARY_FAILURE",
+          message: "A Microsoft está temporariamente indisponível para responder.",
+          safeToFallback: true,
+        }
+      : {
+          code: "GRAPH_REPLY_FAILED",
+          message: "A Microsoft não aceitou a resposta da mensagem.",
+        });
   return Object.assign(new Error(details.message), {
     statusCode: 502,
     publicCode: details.code,
     graphStatus: status,
+    safeToFallback: details.safeToFallback === true,
   });
+}
+
+function isPreSendNetworkError(error) {
+  return (
+    error instanceof TypeError ||
+    error?.name === "AbortError" ||
+    error?.name === "TimeoutError"
+  );
 }
 
 /**
@@ -123,10 +150,23 @@ export async function replyToMicrosoftMessage(
       throw Object.assign(new Error("Conta Microsoft não conectada."), {
         statusCode: 404,
         publicCode: "MICROSOFT_NOT_CONNECTED",
+        safeToFallback: true,
       });
+    }
+    if (isPreSendNetworkError(error)) {
+      throw Object.assign(
+        new Error("A conexão Microsoft está temporariamente indisponível."),
+        {
+          statusCode: 502,
+          publicCode: "MICROSOFT_TOKEN_NETWORK_ERROR",
+          safeToFallback: true,
+        },
+      );
     }
     throw Object.assign(new Error("Não foi possível obter a conexão Microsoft para responder."), {
       statusCode: 502,
+      publicCode: "MICROSOFT_TOKEN_UNAVAILABLE",
+      safeToFallback: false,
     });
   }
 
@@ -148,12 +188,14 @@ export async function replyToMicrosoftMessage(
             },
           },
         }),
+        signal: AbortSignal.timeout(15000),
       },
     );
   } catch {
-    throw Object.assign(new Error("Não foi possível comunicar com o Microsoft Outlook."), {
+    throw Object.assign(new Error("Não foi possível confirmar se o Microsoft Outlook enviou a resposta."), {
       statusCode: 502,
-      publicCode: "GRAPH_UNAVAILABLE",
+      publicCode: "GRAPH_DELIVERY_UNKNOWN",
+      safeToFallback: false,
     });
   }
 

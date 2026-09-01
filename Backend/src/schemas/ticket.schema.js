@@ -59,10 +59,12 @@ export const updateTicketSchema = z.object({
 /**
  * Schema para resposta a um ticket.
  */
-export const replyTicketSchema = z.object({
-  mensagem: z
-    .string({ required_error: "mensagem é obrigatória." })
-    .trim()
-    .min(1, "A mensagem não pode ser vazia.")
-    .max(10000, "A mensagem excede o tamanho máximo."),
-});
+export const replyTicketSchema = z
+  .object({
+    mensagem: z
+      .string({ required_error: "mensagem é obrigatória." })
+      .trim()
+      .min(1, "A mensagem não pode ser vazia.")
+      .max(10000, "A mensagem excede o tamanho máximo."),
+  })
+  .strict();

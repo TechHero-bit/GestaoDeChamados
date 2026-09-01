@@ -1,5 +1,8 @@
 import * as ticketService from "../services/ticket.service.js";
-import { sendTicketReply } from "../services/email.service.js";
+import {
+  getReplyMessageId,
+  sendAndPersistTicketReply,
+} from "../services/ticket-reply.service.js";
 import {
   listTicketsQuerySchema,
   replyTicketSchema,
@@ -18,9 +21,7 @@ function validationError(res, resultado, message = "Dados inválidos.") {
   });
 }
 
-export function getReplyMessageId(ticket) {
-  return ticket.outlook_last_message_id || ticket.outlook_message_id;
-}
+export { getReplyMessageId };
 
 function parseTicketId(id, res) {
   const result = ticketIdSchema.safeParse(id);
@@ -165,38 +166,18 @@ export async function responderTicket(req, res, next) {
       });
     }
 
-    const prioridade = ticket.prioridade ?? "Normal";
-
-    // 3. Montar assunto de resposta (evitar múltiplos RE:)
-    const assuntoOriginal = ticket.assunto.trim();
-    const assuntoResposta = assuntoOriginal.toLowerCase().startsWith("re:")
-      ? assuntoOriginal
-      : `RE: ${assuntoOriginal}`;
-
-    // 4. Enviar via Power Automate
-    await sendTicketReply({
-      ticketId: id,
-      messageId: getReplyMessageId(ticket),
-      destinatario: ticket.remetente_email,
-      assunto: assuntoResposta,
-      mensagem: resultado.data.mensagem,
-      prioridade,
-    });
-
-    // 5. Registrar mensagem de saída (somente após envio bem-sucedido)
-    const mensagem = await ticketService.adicionarMensagem({
-      ticket_id: id,
-      direcao: "Saida",
-      remetente_email: ticketService.getHelpdeskEmail(),
-      destinatario_email: ticket.remetente_email,
-      corpo_mensagem: resultado.data.mensagem,
-      created_by: req.user?.id,
+    // 3. O backend escolhe Graph ou Power Automate e só então persiste.
+    const { message, provider } = await sendAndPersistTicketReply({
+      ticket,
+      userId: req.user.id,
+      message: resultado.data.mensagem,
     });
 
     return res.status(201).json({
       success: true,
       message: "Resposta enviada com sucesso.",
-      data: mensagem,
+      data: message,
+      provider,
     });
   } catch (error) {
     next(error);

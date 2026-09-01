@@ -13,12 +13,8 @@ import {
   getMicrosoftConnectionStatus,
   getValidMicrosoftAccessToken,
 } from "../src/services/microsoft-oauth.service.js";
-import { textToSafeHtml } from "../src/controllers/microsoft-integration.controller.js";
-import { createMicrosoftTicketReplyTestHandler } from "../src/controllers/microsoft-integration.controller.js";
 import { sendMicrosoftEmail } from "../src/services/microsoft-graph.service.js";
 import { replyToMicrosoftMessage } from "../src/services/microsoft-graph.service.js";
-import { microsoftTestEmailSchema } from "../src/schemas/microsoft-email.schema.js";
-import { microsoftTestTicketReplySchema } from "../src/schemas/microsoft-email.schema.js";
 
 class FakeSupabase {
   constructor() {
@@ -154,8 +150,6 @@ test("rotas Microsoft que alteram ou consultam conexão exigem autenticação", 
     ["GET", "/api/integrations/microsoft/connect"],
     ["GET", "/api/integrations/microsoft/status"],
     ["POST", "/api/integrations/microsoft/disconnect"],
-    ["POST", "/api/integrations/microsoft/test-email"],
-    ["POST", "/api/integrations/microsoft/test-ticket-reply/00000000-0000-4000-8000-000000000001"],
   ]) {
     const response = await fetch(`${baseUrl}${path}`, { method });
     assert.equal(response.status, 401);
@@ -265,30 +259,6 @@ test("disconnect marca a conexão como revogada e refresh atualiza tokens expira
   assert.deepEqual(await getMicrosoftConnectionStatus("user-1", { supabase: database }), { connected: false });
 });
 
-test("schema do e-mail exige campos válidos e rejeita user_id enviado pelo cliente", () => {
-  const invalid = microsoftTestEmailSchema.safeParse({
-    destinatario: "destinatario-invalido",
-    assunto: " ",
-    mensagem: "Teste",
-    user_id: "outro-usuario",
-  });
-  assert.equal(invalid.success, false);
-
-  const valid = microsoftTestEmailSchema.parse({
-    destinatario: "destinatario@example.com",
-    assunto: "Teste SmartDesk",
-    mensagem: "Mensagem de teste",
-  });
-  assert.equal(valid.destinatario, "destinatario@example.com");
-});
-
-test("texto do e-mail vira HTML seguro sem permitir HTML arbitrário", () => {
-  assert.equal(
-    textToSafeHtml("<script>alert('x')</script>\nOlá & João"),
-    "&lt;script&gt;alert(&#39;x&#39;)&lt;/script&gt;<br>Olá &amp; João",
-  );
-});
-
 test("Microsoft Graph recebe /me/sendMail, token interno e saveToSentItems=true", async () => {
   const database = new FakeSupabase();
   database.user_microsoft_connections.push({
@@ -328,6 +298,16 @@ test("Microsoft Graph recebe /me/sendMail, token interno e saveToSentItems=true"
     },
     saveToSentItems: true,
   });
+});
+
+test("endpoints temporários de teste foram removidos", async () => {
+  for (const path of [
+    "/api/integrations/microsoft/test-email",
+    "/api/integrations/microsoft/test-ticket-reply/00000000-0000-4000-8000-000000000001",
+  ]) {
+    const response = await fetch(`${baseUrl}${path}`, { method: "POST" });
+    assert.equal(response.status, 404);
+  }
 });
 
 test("usuário sem Outlook conectado recebe erro controlado e Graph não é chamado", async () => {
@@ -418,99 +398,6 @@ test("reply do Graph usa o último message ID, faz URL encoding e não altera o 
   assert.equal(captured.options.body.includes("comment"), false);
 });
 
-test("handler de reply usa somente o ticket e a sessão, sem persistir alterações", async () => {
-  const ticket = {
-    id: "00000000-0000-4000-8000-000000000001",
-    outlook_last_message_id: "last/message",
-    outlook_message_id: "original-message",
-    status: "Aberto",
-    messages: [{ direcao: "Entrada", corpo_mensagem: "original" }],
-  };
-  const before = structuredClone(ticket);
-  let captured;
-  let nextError;
-  const handler = createMicrosoftTicketReplyTestHandler({
-    findTicket: async () => ticket,
-    replyMessage: async (userId, data) => {
-      captured = { userId, data };
-    },
-  });
-  const response = createMockResponse();
-
-  await handler(
-    {
-      params: { ticketId: ticket.id },
-      body: { mensagem: "Resposta temporária" },
-      user: { id: "session-user" },
-    },
-    response,
-    (error) => {
-      nextError = error;
-    },
-  );
-
-  assert.equal(response.statusCode, 200);
-  assert.deepEqual(captured, {
-    userId: "session-user",
-    data: { messageId: "last/message", message: "Resposta temporária" },
-  });
-  assert.equal(nextError, undefined);
-  assert.deepEqual(ticket, before);
-});
-
-test("handler de reply usa outlook_last_message_id e faz fallback para outlook_message_id", async () => {
-  const calls = [];
-  const handler = createMicrosoftTicketReplyTestHandler({
-    findTicket: async (id) => ({
-      id,
-      outlook_last_message_id: id.endsWith("1") ? "last-message" : null,
-      outlook_message_id: "original-message",
-    }),
-    replyMessage: async (userId, data) => calls.push({ userId, data }),
-  });
-
-  for (const ticketId of [
-    "00000000-0000-4000-8000-000000000001",
-    "00000000-0000-4000-8000-000000000002",
-  ]) {
-    const response = createMockResponse();
-    await handler(
-      { params: { ticketId }, body: { mensagem: "Teste" }, user: { id: "session-user" } },
-      response,
-      () => {},
-    );
-    assert.equal(response.statusCode, 200);
-  }
-
-  assert.deepEqual(calls, [
-    { userId: "session-user", data: { messageId: "last-message", message: "Teste" } },
-    { userId: "session-user", data: { messageId: "original-message", message: "Teste" } },
-  ]);
-});
-
-test("handler retorna erro para ticket inexistente ou sem message ID", async () => {
-  const notFound = createMicrosoftTicketReplyTestHandler({ findTicket: async () => null });
-  const notFoundResponse = createMockResponse();
-  await notFound(
-    { params: { ticketId: "00000000-0000-4000-8000-000000000001" }, body: { mensagem: "Teste" }, user: { id: "user-1" } },
-    notFoundResponse,
-    () => {},
-  );
-  assert.equal(notFoundResponse.statusCode, 404);
-
-  const withoutMessage = createMicrosoftTicketReplyTestHandler({
-    findTicket: async () => ({ outlook_last_message_id: null, outlook_message_id: null }),
-    replyMessage: async () => assert.fail("Graph não deveria ser chamado"),
-  });
-  const withoutMessageResponse = createMockResponse();
-  await withoutMessage(
-    { params: { ticketId: "00000000-0000-4000-8000-000000000001" }, body: { mensagem: "Teste" }, user: { id: "user-1" } },
-    withoutMessageResponse,
-    () => {},
-  );
-  assert.equal(withoutMessageResponse.statusCode, 422);
-});
-
 test("reply do Graph trata 400, 401, 403 e 404 com mensagens controladas", async () => {
   const expected = {
     400: "GRAPH_BAD_REQUEST",
@@ -537,27 +424,4 @@ test("reply do Graph trata 400, 401, 403 e 404 com mensagens controladas", async
       },
     );
   }
-});
-
-function createMockResponse() {
-  return {
-    statusCode: 200,
-    body: null,
-    status(code) {
-      this.statusCode = code;
-      return this;
-    },
-    json(body) {
-      this.body = body;
-      return this;
-    },
-  };
-}
-test("payload do reply temporário não aceita message_id nem user_id do frontend", () => {
-  const invalid = microsoftTestTicketReplySchema.safeParse({
-    mensagem: "Teste",
-    message_id: "forged-message",
-    user_id: "other-user",
-  });
-  assert.equal(invalid.success, false);
 });
