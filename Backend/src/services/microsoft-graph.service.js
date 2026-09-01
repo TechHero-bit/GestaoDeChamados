@@ -61,3 +61,103 @@ export async function sendMicrosoftEmail(
   }
 }
 
+
+function safeHtmlFromText(text) {
+  return String(text).replace(/[&<>"']/g, (character) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;",
+  })[character]).replace(/\r?\n/g, "<br>");
+}
+
+function graphReplyError(status) {
+  const errors = {
+    400: {
+      code: "GRAPH_BAD_REQUEST",
+      message: "A Microsoft rejeitou o payload ou o identificador da mensagem.",
+    },
+    401: {
+      code: "GRAPH_UNAUTHORIZED",
+      message: "A Microsoft não autorizou a resposta com a conta conectada.",
+    },
+    403: {
+      code: "GRAPH_FORBIDDEN",
+      message: "A conta Microsoft conectada não tem acesso para responder esta mensagem.",
+    },
+    404: {
+      code: "GRAPH_MESSAGE_NOT_FOUND",
+      message: "A mensagem original não foi encontrada na conta Microsoft conectada.",
+    },
+  };
+  const details = errors[status] || {
+    code: "GRAPH_REPLY_FAILED",
+    message: "A Microsoft não aceitou a resposta da mensagem.",
+  };
+  return Object.assign(new Error(details.message), {
+    statusCode: 502,
+    publicCode: details.code,
+    graphStatus: status,
+  });
+}
+
+/**
+ * Responde diretamente a uma mensagem existente na mailbox Microsoft conectada.
+ * Este método não persiste nada no Help Desk.
+ */
+export async function replyToMicrosoftMessage(
+  userId,
+  { messageId, message },
+  { getAccessToken = getValidMicrosoftAccessToken, fetchImpl = globalThis.fetch } = {},
+) {
+  if (typeof messageId !== "string" || messageId.trim().length === 0) {
+    throw Object.assign(new Error("Identificador da mensagem inválido."), { statusCode: 400 });
+  }
+
+  let accessToken;
+  try {
+    accessToken = await getAccessToken(userId);
+  } catch (error) {
+    if (error?.statusCode === 404) {
+      throw Object.assign(new Error("Conta Microsoft não conectada."), {
+        statusCode: 404,
+        publicCode: "MICROSOFT_NOT_CONNECTED",
+      });
+    }
+    throw Object.assign(new Error("Não foi possível obter a conexão Microsoft para responder."), {
+      statusCode: 502,
+    });
+  }
+
+  let response;
+  try {
+    response = await fetchImpl(
+      `https://graph.microsoft.com/v1.0/me/messages/${encodeURIComponent(messageId)}/reply`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          message: {
+            body: {
+              contentType: "HTML",
+              content: safeHtmlFromText(message),
+            },
+          },
+        }),
+      },
+    );
+  } catch {
+    throw Object.assign(new Error("Não foi possível comunicar com o Microsoft Outlook."), {
+      statusCode: 502,
+      publicCode: "GRAPH_UNAVAILABLE",
+    });
+  }
+
+  if (response.status !== 202) {
+    throw graphReplyError(response.status);
+  }
+}

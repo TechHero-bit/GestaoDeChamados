@@ -23,10 +23,17 @@ export class IntegrationsPage implements OnInit {
   readonly feedbackMessage = signal('');
   readonly testEmailError = signal('');
   readonly testEmailFeedback = signal('');
+  readonly sendingTicketReplyTest = signal(false);
+  readonly testTicketReplyError = signal('');
+  readonly testTicketReplyFeedback = signal('');
   readonly testEmail = {
     destinatario: '',
     assunto: 'Teste SmartDesk',
     mensagem: '',
+  };
+  readonly testTicketReply = {
+    ticketId: '',
+    mensagem: 'Resposta de teste pelo Microsoft Graph',
   };
 
   ngOnInit(): void {
@@ -78,6 +85,23 @@ export class IntegrationsPage implements OnInit {
         error: (error) =>
           this.testEmailError.set(
             error.error?.message || 'Não foi possível enviar o e-mail de teste.',
+          ),
+      });
+  }
+  sendTestTicketReply(): void {
+    this.sendingTicketReplyTest.set(true);
+    this.testTicketReplyError.set('');
+    this.testTicketReplyFeedback.set('');
+    this.integrationService
+      .sendTestTicketReply(this.testTicketReply.ticketId, {
+        mensagem: this.testTicketReply.mensagem,
+      })
+      .pipe(finalize(() => this.sendingTicketReplyTest.set(false)))
+      .subscribe({
+        next: (response) => this.testTicketReplyFeedback.set(response.message),
+        error: (error) =>
+          this.testTicketReplyError.set(
+            error.error?.message || 'Não foi possível testar a resposta pelo Graph.',
           ),
       });
   }

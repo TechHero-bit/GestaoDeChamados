@@ -132,5 +132,62 @@
         </form>
       </section>
     }
+    @if (status()?.connected) {
+      <section class="card mt-6 overflow-hidden">
+        <div class="card-header">
+          <div class="flex size-10 items-center justify-center rounded-lg bg-primary-fixed text-primary">
+            <span class="material-symbols-outlined" aria-hidden="true">reply</span>
+          </div>
+          <div>
+            <h2 class="font-semibold text-on-surface">Testar resposta de ticket</h2>
+            <p class="text-xs text-on-surface-variant">Validação temporária pelo Microsoft Graph</p>
+          </div>
+        </div>
+
+        <form class="space-y-4 p-5 sm:p-6" (ngSubmit)="sendTestTicketReply()" #testTicketReplyForm="ngForm">
+          @if (testTicketReplyFeedback()) {
+            <div class="rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800" role="status">
+              {{ testTicketReplyFeedback() }}
+            </div>
+          }
+          @if (testTicketReplyError()) {
+            <div class="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800" role="alert">
+              {{ testTicketReplyError() }}
+            </div>
+          }
+
+          <div>
+            <label class="field-label" for="test-ticket-id">ID do ticket</label>
+            <input
+              id="test-ticket-id"
+              class="field-control"
+              type="text"
+              name="ticketId"
+              [(ngModel)]="testTicketReply.ticketId"
+              required
+              maxlength="100"
+              autocomplete="off"
+            />
+          </div>
+          <div>
+            <label class="field-label" for="test-ticket-message">Mensagem</label>
+            <textarea
+              id="test-ticket-message"
+              class="field-control min-h-32 resize-y"
+              name="mensagemReply"
+              [(ngModel)]="testTicketReply.mensagem"
+              required
+              maxlength="10000"
+            ></textarea>
+          </div>
+          <div class="flex justify-end">
+            <button class="primary-button" type="submit" [disabled]="sendingTicketReplyTest() || testTicketReplyForm.invalid">
+              <span class="material-symbols-outlined text-base" aria-hidden="true">reply</span>
+              {{ sendingTicketReplyTest() ? 'Testando...' : 'Testar resposta pelo Graph' }}
+            </button>
+          </div>
+        </form>
+      </section>
+    }
   </div>
 </main>

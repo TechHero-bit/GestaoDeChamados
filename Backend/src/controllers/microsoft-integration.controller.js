@@ -3,6 +3,9 @@ import {
   getMicrosoftAuthorizationUrl,
 } from "../config/microsoft.js";
 import { microsoftTestEmailSchema } from "../schemas/microsoft-email.schema.js";
+import { microsoftTestTicketReplySchema } from "../schemas/microsoft-email.schema.js";
+import * as ticketService from "../services/ticket.service.js";
+import { ticketIdSchema } from "../schemas/ticket.schema.js";
 import * as microsoftGraphService from "../services/microsoft-graph.service.js";
 import * as microsoftOAuthService from "../services/microsoft-oauth.service.js";
 
@@ -121,3 +124,61 @@ export async function sendMicrosoftTestEmail(req, res, next) {
     return next(error);
   }
 }
+
+export function createMicrosoftTicketReplyTestHandler({
+  findTicket = ticketService.buscarPorId,
+  replyMessage = microsoftGraphService.replyToMicrosoftMessage,
+} = {}) {
+  return async function sendMicrosoftTicketReplyTest(req, res, next) {
+    const ticketIdResult = ticketIdSchema.safeParse(req.params.ticketId);
+    if (!ticketIdResult.success) {
+      return res.status(400).json({
+        success: false,
+        message: "Identificador do chamado inválido.",
+      });
+    }
+
+    const resultado = microsoftTestTicketReplySchema.safeParse(req.body);
+    if (!resultado.success) {
+      return validationError(res, resultado, "Dados da resposta inválidos.");
+    }
+
+    try {
+      const ticket = await findTicket(ticketIdResult.data);
+      if (!ticket) {
+        return res.status(404).json({
+          success: false,
+          message: "Chamado não encontrado.",
+        });
+      }
+
+      const messageId = ticket.outlook_last_message_id || ticket.outlook_message_id;
+      if (typeof messageId !== "string" || messageId.trim().length === 0) {
+        return res.status(422).json({
+          success: false,
+          message: "O chamado não possui uma mensagem do Outlook para responder.",
+        });
+      }
+
+      await replyMessage(req.user.id, {
+        messageId,
+        message: resultado.data.mensagem,
+      });
+
+      return res.status(200).json({
+        success: true,
+        message: "Resposta de teste enviada pelo Microsoft Graph.",
+      });
+    } catch (error) {
+      if (error?.publicCode === "MICROSOFT_NOT_CONNECTED") {
+        return res.status(409).json({
+          success: false,
+          message: "Conecte sua conta Microsoft antes de responder e-mails.",
+        });
+      }
+      return next(error);
+    }
+  };
+}
+
+export const sendMicrosoftTicketReplyTest = createMicrosoftTicketReplyTestHandler();

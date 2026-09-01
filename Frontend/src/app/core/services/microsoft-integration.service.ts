@@ -30,6 +30,16 @@ export class MicrosoftIntegrationService {
     );
   }
 
+  sendTestTicketReply(
+    ticketId: string,
+    payload: { mensagem: string },
+  ): Observable<{ success: boolean; message: string }> {
+    return this.http.post<{ success: boolean; message: string }>(
+      `${this.apiUrl}/test-ticket-reply/${encodeURIComponent(ticketId)}`,
+      payload,
+    );
+  }
+
   connect(): void {
     // A navegação completa preserva o redirect OAuth e evita XHR/interceptor.
     this.authService.beginExternalAuth();

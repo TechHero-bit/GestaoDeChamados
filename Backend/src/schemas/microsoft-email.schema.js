@@ -20,3 +20,13 @@ export const microsoftTestEmailSchema = z
   })
   .strict();
 
+
+export const microsoftTestTicketReplySchema = z
+  .object({
+    mensagem: z
+      .string({ required_error: "mensagem é obrigatória." })
+      .trim()
+      .min(1, "A mensagem não pode ser vazia.")
+      .max(10000, "A mensagem excede o tamanho máximo."),
+  })
+  .strict();
