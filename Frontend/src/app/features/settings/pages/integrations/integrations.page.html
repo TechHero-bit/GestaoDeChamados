@@ -62,5 +62,75 @@
         }
       </div>
     </section>
+
+    @if (status()?.connected) {
+      <section class="card mt-6 overflow-hidden">
+        <div class="card-header">
+          <div class="flex size-10 items-center justify-center rounded-lg bg-primary-fixed text-primary">
+            <span class="material-symbols-outlined" aria-hidden="true">send</span>
+          </div>
+          <div>
+            <h2 class="font-semibold text-on-surface">Enviar e-mail de teste</h2>
+            <p class="text-xs text-on-surface-variant">Envio temporário pela sua conta Outlook conectada</p>
+          </div>
+        </div>
+
+        <form class="space-y-4 p-5 sm:p-6" (ngSubmit)="sendTestEmail()" #testEmailForm="ngForm">
+          @if (testEmailFeedback()) {
+            <div class="rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800" role="status">
+              {{ testEmailFeedback() }}
+            </div>
+          }
+          @if (testEmailError()) {
+            <div class="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800" role="alert">
+              {{ testEmailError() }}
+            </div>
+          }
+
+          <div>
+            <label class="field-label" for="test-email-recipient">Destinatário</label>
+            <input
+              id="test-email-recipient"
+              class="field-control"
+              type="email"
+              name="destinatario"
+              [(ngModel)]="testEmail.destinatario"
+              required
+              maxlength="254"
+              autocomplete="email"
+            />
+          </div>
+          <div>
+            <label class="field-label" for="test-email-subject">Assunto</label>
+            <input
+              id="test-email-subject"
+              class="field-control"
+              type="text"
+              name="assunto"
+              [(ngModel)]="testEmail.assunto"
+              required
+              maxlength="320"
+            />
+          </div>
+          <div>
+            <label class="field-label" for="test-email-message">Mensagem</label>
+            <textarea
+              id="test-email-message"
+              class="field-control min-h-32 resize-y"
+              name="mensagem"
+              [(ngModel)]="testEmail.mensagem"
+              required
+              maxlength="10000"
+            ></textarea>
+          </div>
+          <div class="flex justify-end">
+            <button class="primary-button" type="submit" [disabled]="sendingTestEmail() || testEmailForm.invalid">
+              <span class="material-symbols-outlined text-base" aria-hidden="true">send</span>
+              {{ sendingTestEmail() ? 'Enviando...' : 'Enviar teste' }}
+            </button>
+          </div>
+        </form>
+      </section>
+    }
   </div>
 </main>

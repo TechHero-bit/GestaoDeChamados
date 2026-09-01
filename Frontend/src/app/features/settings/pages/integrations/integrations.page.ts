@@ -1,4 +1,5 @@
 import { Component, inject, OnInit, signal } from '@angular/core';
+import { FormsModule } from '@angular/forms';
 import { ActivatedRoute } from '@angular/router';
 import { finalize } from 'rxjs';
 import { MicrosoftConnectionStatus } from '../../../../core/models/microsoft-connection.model';
@@ -7,6 +8,7 @@ import { MicrosoftIntegrationService } from '../../../../core/services/microsoft
 @Component({
   selector: 'app-integrations-page',
   standalone: true,
+  imports: [FormsModule],
   templateUrl: './integrations.page.html',
 })
 export class IntegrationsPage implements OnInit {
@@ -16,8 +18,16 @@ export class IntegrationsPage implements OnInit {
   readonly status = signal<MicrosoftConnectionStatus | null>(null);
   readonly loading = signal(true);
   readonly disconnecting = signal(false);
+  readonly sendingTestEmail = signal(false);
   readonly errorMessage = signal('');
   readonly feedbackMessage = signal('');
+  readonly testEmailError = signal('');
+  readonly testEmailFeedback = signal('');
+  readonly testEmail = {
+    destinatario: '',
+    assunto: 'Teste SmartDesk',
+    mensagem: '',
+  };
 
   ngOnInit(): void {
     const result = this.route.snapshot.queryParamMap.get('microsoft');
@@ -54,6 +64,21 @@ export class IntegrationsPage implements OnInit {
           this.loadStatus();
         },
         error: () => this.errorMessage.set('Não foi possível desconectar a conta Microsoft.'),
+      });
+  }
+  sendTestEmail(): void {
+    this.sendingTestEmail.set(true);
+    this.testEmailError.set('');
+    this.testEmailFeedback.set('');
+    this.integrationService
+      .sendTestEmail(this.testEmail)
+      .pipe(finalize(() => this.sendingTestEmail.set(false)))
+      .subscribe({
+        next: (response) => this.testEmailFeedback.set(response.message),
+        error: (error) =>
+          this.testEmailError.set(
+            error.error?.message || 'Não foi possível enviar o e-mail de teste.',
+          ),
       });
   }
 }

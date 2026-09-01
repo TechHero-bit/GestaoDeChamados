@@ -183,6 +183,7 @@ Abra `http://localhost:4200`.
 | `GET` | `/api/integrations/microsoft/callback` | Microsoft OAuth | Finaliza OAuth e persiste tokens cifrados |
 | `GET` | `/api/integrations/microsoft/status` | Autenticada | Retorna somente status e identidade conectada |
 | `POST` | `/api/integrations/microsoft/disconnect` | Autenticada | Revoga a conexão local |
+| `POST` | `/api/integrations/microsoft/test-email` | Autenticada | Envia e-mail temporário pela conta Outlook conectada |
 
 ---
 

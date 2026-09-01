@@ -13,6 +13,9 @@ import {
   getMicrosoftConnectionStatus,
   getValidMicrosoftAccessToken,
 } from "../src/services/microsoft-oauth.service.js";
+import { textToSafeHtml } from "../src/controllers/microsoft-integration.controller.js";
+import { sendMicrosoftEmail } from "../src/services/microsoft-graph.service.js";
+import { microsoftTestEmailSchema } from "../src/schemas/microsoft-email.schema.js";
 
 class FakeSupabase {
   constructor() {
@@ -148,6 +151,7 @@ test("rotas Microsoft que alteram ou consultam conexão exigem autenticação", 
     ["GET", "/api/integrations/microsoft/connect"],
     ["GET", "/api/integrations/microsoft/status"],
     ["POST", "/api/integrations/microsoft/disconnect"],
+    ["POST", "/api/integrations/microsoft/test-email"],
   ]) {
     const response = await fetch(`${baseUrl}${path}`, { method });
     assert.equal(response.status, 401);
@@ -255,4 +259,118 @@ test("disconnect marca a conexão como revogada e refresh atualiza tokens expira
 
   await disconnectMicrosoftConnection("user-1", { supabase: database });
   assert.deepEqual(await getMicrosoftConnectionStatus("user-1", { supabase: database }), { connected: false });
+});
+
+test("schema do e-mail exige campos válidos e rejeita user_id enviado pelo cliente", () => {
+  const invalid = microsoftTestEmailSchema.safeParse({
+    destinatario: "destinatario-invalido",
+    assunto: " ",
+    mensagem: "Teste",
+    user_id: "outro-usuario",
+  });
+  assert.equal(invalid.success, false);
+
+  const valid = microsoftTestEmailSchema.parse({
+    destinatario: "destinatario@example.com",
+    assunto: "Teste SmartDesk",
+    mensagem: "Mensagem de teste",
+  });
+  assert.equal(valid.destinatario, "destinatario@example.com");
+});
+
+test("texto do e-mail vira HTML seguro sem permitir HTML arbitrário", () => {
+  assert.equal(
+    textToSafeHtml("<script>alert('x')</script>\nOlá & João"),
+    "&lt;script&gt;alert(&#39;x&#39;)&lt;/script&gt;<br>Olá &amp; João",
+  );
+});
+
+test("Microsoft Graph recebe /me/sendMail, token interno e saveToSentItems=true", async () => {
+  const database = new FakeSupabase();
+  database.user_microsoft_connections.push({
+    user_id: "user-1",
+    access_token_encrypted: encryptMicrosoftToken("graph-access-token"),
+    refresh_token_encrypted: encryptMicrosoftToken("graph-refresh-token"),
+    access_token_expires_at: "2099-01-01T00:00:00.000Z",
+    revoked_at: null,
+  });
+
+  let requestedUserId;
+  let captured;
+  await sendMicrosoftEmail(
+    "user-1",
+    { to: "destinatario@example.com", subject: "Assunto", html: "Mensagem<br>segura" },
+    {
+      getAccessToken: async (userId) => {
+        requestedUserId = userId;
+        return getValidMicrosoftAccessToken(userId, { supabase: database });
+      },
+      fetchImpl: async (url, options) => {
+        captured = { url, options };
+        return new Response(null, { status: 202 });
+      },
+    },
+  );
+
+  assert.equal(requestedUserId, "user-1");
+  assert.equal(captured.url, "https://graph.microsoft.com/v1.0/me/sendMail");
+  assert.equal(captured.options.method, "POST");
+  assert.equal(captured.options.headers.Authorization, "Bearer graph-access-token");
+  assert.deepEqual(JSON.parse(captured.options.body), {
+    message: {
+      subject: "Assunto",
+      body: { contentType: "HTML", content: "Mensagem<br>segura" },
+      toRecipients: [{ emailAddress: { address: "destinatario@example.com" } }],
+    },
+    saveToSentItems: true,
+  });
+});
+
+test("usuário sem Outlook conectado recebe erro controlado e Graph não é chamado", async () => {
+  let graphCalled = false;
+  await assert.rejects(
+    sendMicrosoftEmail(
+      "user-without-outlook",
+      { to: "destinatario@example.com", subject: "Assunto", html: "Mensagem" },
+      {
+        getAccessToken: async () => {
+          throw Object.assign(new Error("Conta Microsoft não conectada."), { statusCode: 404 });
+        },
+        fetchImpl: async () => {
+          graphCalled = true;
+          return new Response(null, { status: 202 });
+        },
+      },
+    ),
+    (error) => {
+      assert.equal(error.statusCode, 404);
+      assert.equal(error.message, "Conta Microsoft não conectada.");
+      return true;
+    },
+  );
+  assert.equal(graphCalled, false);
+});
+
+test("erro do Microsoft Graph não expõe resposta sensível nem token", async () => {
+  const accessToken = "graph-secret-access-token";
+  await assert.rejects(
+    sendMicrosoftEmail(
+      "user-1",
+      { to: "destinatario@example.com", subject: "Assunto", html: "Mensagem" },
+      {
+        getAccessToken: async () => accessToken,
+        fetchImpl: async () =>
+          new Response(JSON.stringify({ error: { message: "dados internos", accessToken } }), {
+            status: 403,
+            headers: { "Content-Type": "application/json" },
+          }),
+      },
+    ),
+    (error) => {
+      assert.equal(error.statusCode, 502);
+      assert.equal(error.message, "A Microsoft não aceitou o envio do e-mail.");
+      assert.equal(error.message.includes(accessToken), false);
+      return true;
+    },
+  );
 });
