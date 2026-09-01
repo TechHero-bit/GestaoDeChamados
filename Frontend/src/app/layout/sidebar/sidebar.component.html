@@ -65,15 +65,15 @@
       <span>Relatórios</span>
     </button>
 
-    <button
+    <a
       class="nav-item"
-      type="button"
-      disabled
-      title="Configurações previstas para uma próxima fase"
+      routerLink="/settings/integrations"
+      routerLinkActive="nav-item-active"
+      (click)="closeSidebar.emit()"
     >
       <span class="material-symbols-outlined" aria-hidden="true">settings</span>
       <span>Configurações</span>
-    </button>
+    </a>
   </nav>
 
   <div class="border-t border-white/10 px-2 pt-4 space-y-1">

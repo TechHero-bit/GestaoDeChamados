@@ -89,6 +89,8 @@ Execute no SQL Editor do Supabase, rigorosamente nesta ordem:
 3. `database/migrations/003_create_users.sql`
 4. `database/migrations/004_create_user_sessions.sql`
 5. `database/migrations/005_audit_and_security.sql`
+6. `database/migrations/006_add_outlook_threading.sql`
+7. `database/migrations/007_create_microsoft_oauth.sql`
 
 ### Estrutura das Tabelas Principais:
 - **`users`**: Armazena colaboradores (`nome`, `email`, `password_hash`, `role: ADMIN | AGENT`, `ativo`, `ultimo_login`).
@@ -177,6 +179,10 @@ Abra `http://localhost:4200`.
 | `PUT` | `/api/tickets/:id` | Autenticada | Atualiza o status do chamado |
 | `DELETE` | `/api/tickets/:id` | Autenticada (Apenas `ADMIN`) | Exclui chamado e mensagens associadas |
 | `POST` | `/api/tickets/:id/reply` | Autenticada (Rate Limit 10/min) | Envia resposta ao solicitante via Outlook |
+| `GET` | `/api/integrations/microsoft/connect` | Autenticada | Inicia conexão OAuth da conta Microsoft do usuário |
+| `GET` | `/api/integrations/microsoft/callback` | Microsoft OAuth | Finaliza OAuth e persiste tokens cifrados |
+| `GET` | `/api/integrations/microsoft/status` | Autenticada | Retorna somente status e identidade conectada |
+| `POST` | `/api/integrations/microsoft/disconnect` | Autenticada | Revoga a conexão local |
 
 ---
 
@@ -242,3 +248,7 @@ O mesmo repositório Git alimenta dois projetos independentes na Vercel:
 - [ ] Webhook do Outlook (`/api/webhooks/outlook`) funcionando com `x-webhook-secret`
 - [ ] Resposta ao chamado (`/api/tickets/:id/reply`) enviando e-mail via Power Automate
 - [ ] Exclusão de tickets restrita ao perfil `ADMIN`
+
+### Microsoft OAuth
+
+A primeira etapa da integração Outlook permite conectar a conta Microsoft individual de cada usuário. Configure as cinco variáveis `MICROSOFT_*` no backend e registre no Microsoft Entra o redirect URI `https://gestao-de-chamados-backend.vercel.app/api/integrations/microsoft/callback`. Execute a migration 007 manualmente no Supabase; nenhum deploy ou migration é executado automaticamente.

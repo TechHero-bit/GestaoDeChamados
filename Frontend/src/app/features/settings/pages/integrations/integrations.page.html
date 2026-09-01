@@ -1,0 +1,66 @@
+<main class="min-h-[calc(100dvh-72px)] bg-surface px-4 py-6 sm:px-8 lg:px-10">
+  <div class="mx-auto max-w-4xl">
+    <div class="mb-8">
+      <p class="mb-2 text-xs font-semibold uppercase tracking-[0.08em] text-primary">Perfil / Configurações</p>
+      <h1 class="text-2xl font-bold tracking-tight text-on-surface">Integrações</h1>
+      <p class="mt-2 text-sm text-on-surface-variant">Conecte serviços usados pelo Help Desk.</p>
+    </div>
+
+    @if (feedbackMessage()) {
+      <div class="mb-4 rounded-lg border border-green-200 bg-green-50 px-4 py-3 text-sm text-green-800" role="status">
+        {{ feedbackMessage() }}
+      </div>
+    }
+    @if (errorMessage()) {
+      <div class="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800" role="alert">
+        {{ errorMessage() }}
+      </div>
+    }
+
+    <section class="card overflow-hidden">
+      <div class="card-header">
+        <div class="flex size-10 items-center justify-center rounded-lg bg-primary-fixed text-primary">
+          <span class="material-symbols-outlined" aria-hidden="true">mail</span>
+        </div>
+        <div>
+          <h2 class="font-semibold text-on-surface">Microsoft Outlook</h2>
+          <p class="text-xs text-on-surface-variant">Conta corporativa individual</p>
+        </div>
+      </div>
+
+      <div class="p-5 sm:p-6">
+        @if (loading()) {
+          <div class="space-y-3" aria-label="Carregando status">
+            <div class="skeleton h-4 w-32"></div>
+            <div class="skeleton h-4 w-56"></div>
+          </div>
+        } @else if (status()?.connected) {
+          <div class="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p class="mb-2 inline-flex items-center gap-1.5 text-sm font-semibold text-green-700">
+                <span class="material-symbols-outlined text-base" aria-hidden="true">check_circle</span>
+                Conectado
+              </p>
+              <p class="font-semibold text-on-surface">{{ status()?.display_name }}</p>
+              <p class="text-sm text-on-surface-variant">{{ status()?.email }}</p>
+            </div>
+            <button class="secondary-button" type="button" [disabled]="disconnecting()" (click)="disconnect()">
+              <span class="material-symbols-outlined text-base" aria-hidden="true">link_off</span>
+              {{ disconnecting() ? 'Desconectando...' : 'Desconectar' }}
+            </button>
+          </div>
+        } @else {
+          <div class="flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
+            <p class="max-w-xl text-sm leading-6 text-on-surface-variant">
+              Conecte sua conta Microsoft para futuramente responder chamados usando seu próprio Outlook.
+            </p>
+            <button class="primary-button shrink-0" type="button" (click)="connect()">
+              <span class="material-symbols-outlined text-base" aria-hidden="true">open_in_new</span>
+              Conectar Outlook
+            </button>
+          </div>
+        }
+      </div>
+    </section>
+  </div>
+</main>

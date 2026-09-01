@@ -4,6 +4,7 @@ import express from "express";
 import helmet from "helmet";
 import { errorMiddleware } from "./middlewares/error.middleware.js";
 import authRoutes from "./routes/auth.routes.js";
+import microsoftIntegrationRoutes from "./routes/microsoft-integration.routes.js";
 import ticketRoutes from "./routes/ticket.routes.js";
 import webhookRoutes from "./routes/webhook.routes.js";
 
@@ -65,7 +66,11 @@ app.use(express.json({ limit: "100kb" }));
 
 // Prevenção de cache em endpoints de dados sensíveis e privados
 app.use((req, res, next) => {
-  if (req.path.startsWith("/api/tickets") || req.path.startsWith("/api/auth")) {
+  if (
+    req.path.startsWith("/api/tickets") ||
+    req.path.startsWith("/api/auth") ||
+    req.path.startsWith("/api/integrations/microsoft")
+  ) {
     res.setHeader(
       "Cache-Control",
       "no-store, no-cache, must-revalidate, proxy-revalidate",
@@ -83,6 +88,7 @@ app.get("/health", (_req, res) => {
 
 // Rotas da API
 app.use("/api/auth", authRoutes);
+app.use("/api/integrations/microsoft", microsoftIntegrationRoutes);
 app.use("/api/tickets", ticketRoutes);
 app.use("/api/webhooks", webhookRoutes);
 

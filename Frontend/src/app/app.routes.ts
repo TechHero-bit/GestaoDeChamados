@@ -33,6 +33,14 @@ export const routes: Routes = [
             (module) => module.TicketDetailPage,
           ),
       },
+      {
+        path: 'settings/integrations',
+        title: 'Integrações | Helpdesk Central',
+        loadComponent: () =>
+          import('./features/settings/pages/integrations/integrations.page').then(
+            (module) => module.IntegrationsPage,
+          ),
+      },
     ],
   },
   { path: '**', redirectTo: 'tickets' },

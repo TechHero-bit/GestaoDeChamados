@@ -72,3 +72,13 @@ Os testes cobrem o contrato HTTP que não depende de serviços externos. CRUD, i
 ## Debug
 
 Pressione **F5** no VS Code para iniciar o debug com breakpoints.
+
+## Integração Microsoft Outlook (OAuth)
+
+A migration `database/migrations/007_create_microsoft_oauth.sql` cria `user_microsoft_connections` (uma conexão por usuário) e `microsoft_oauth_states` (state com hash, expiração e uso único). Execute-a após as migrations anteriores, manualmente no SQL Editor do Supabase.
+
+Configure no backend: `MICROSOFT_CLIENT_ID`, `MICROSOFT_TENANT_ID`, `MICROSOFT_CLIENT_SECRET`, `MICROSOFT_REDIRECT_URI` e `MICROSOFT_TOKEN_ENCRYPTION_KEY`. A última é exclusiva da integração e é derivada para uma chave AES-256-GCM; não reutilize segredos JWT, webhook ou Power Automate.
+
+Rotas autenticadas: `GET /api/integrations/microsoft/connect`, `GET /api/integrations/microsoft/status` e `POST /api/integrations/microsoft/disconnect`. O callback `GET /api/integrations/microsoft/callback` é público por necessidade do OAuth, mas só aceita state válido, vinculado ao usuário e de uso único.
+
+Os tokens permanecem no backend, cifrados no Supabase, e nunca são devolvidos ao frontend. O disconnect marca `revoked_at`; a revogação da sessão Microsoft não é chamada nesta etapa, pois não há endpoint Graph necessário para isso.
