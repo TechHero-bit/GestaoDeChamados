@@ -6,7 +6,7 @@ import {
 } from '@angular/core';
 import { provideHttpClient, withInterceptors } from '@angular/common/http';
 import { provideRouter, withInMemoryScrolling } from '@angular/router';
-import { firstValueFrom } from 'rxjs';
+import { firstValueFrom, tap } from 'rxjs';
 import { routes } from './app.routes';
 import { authInterceptor } from './core/interceptors/auth.interceptor';
 import { AuthService } from './core/services/auth.service';
@@ -18,7 +18,11 @@ export const appConfig: ApplicationConfig = {
     provideRouter(routes, withInMemoryScrolling({ scrollPositionRestoration: 'top' })),
     provideAppInitializer(() => {
       const authService = inject(AuthService);
-      return firstValueFrom(authService.checkSession());
+      return firstValueFrom(
+        authService.checkSession().pipe(
+          tap((user) => authService.restoreExternalAuthState(user)),
+        ),
+      );
     }),
   ],
 };

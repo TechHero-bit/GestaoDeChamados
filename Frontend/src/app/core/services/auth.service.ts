@@ -5,6 +5,8 @@ import { catchError, finalize, map, Observable, of, tap, throwError } from 'rxjs
 import { environment } from '../../../environments/environment';
 import { AuthResponse, AuthState, LoginCredentials, User } from '../models/auth.model';
 
+const MICROSOFT_OAUTH_MARKER = 'helpdesk:microsoft_oauth_in_progress';
+
 @Injectable({ providedIn: 'root' })
 export class AuthService {
   private readonly http = inject(HttpClient);
@@ -13,7 +15,7 @@ export class AuthService {
 
   private readonly _currentUser = signal<User | null>(null);
   private readonly _authState = signal<AuthState>('checking');
-  private readonly _externalAuthInProgress = signal(false);
+  private readonly _externalAuthInProgress = signal(this.hasExternalAuthMarker());
 
   private authOperationVersion = 0;
 
@@ -124,14 +126,63 @@ export class AuthService {
   }
 
   /**
-   * Marca a navegação OAuth externa para que o idle monitor não tente
-   * encerrar a sessão no mesmo instante em que o usuário sai do Help Desk.
+   * Marca a navegação OAuth externa com um indicador não sensível.
    */
   beginExternalAuth(): void {
+    try {
+      sessionStorage.setItem(MICROSOFT_OAUTH_MARKER, 'true');
+    } catch {
+      // A navegação continua segura mesmo se o storage estiver indisponível.
+    }
     this._externalAuthInProgress.set(true);
   }
 
-  cancelExternalAuth(): void {
+  /**
+   * Restaura e encerra o ciclo OAuth após o bootstrap validar /api/auth/me.
+   * Um marcador sem retorno Microsoft válido é considerado stale e removido.
+   */
+  restoreExternalAuthState(user: User | null): void {
+    if (!this.hasExternalAuthMarker()) {
+      this._externalAuthInProgress.set(false);
+      return;
+    }
+
+    const query = new URLSearchParams(
+      typeof window === 'undefined' ? '' : window.location.search,
+    );
+    const isMicrosoftReturn =
+      typeof window !== 'undefined' &&
+      window.location.pathname === '/settings/integrations' &&
+      ['connected', 'error'].includes(query.get('microsoft') || '');
+
+    if (!user || !isMicrosoftReturn) {
+      this.clearExternalAuthMarker();
+      this._externalAuthInProgress.set(false);
+      return;
+    }
+
+    this.clearExternalAuthMarker();
     this._externalAuthInProgress.set(false);
+  }
+
+  cancelExternalAuth(): void {
+    this.clearExternalAuthMarker();
+    this._externalAuthInProgress.set(false);
+  }
+
+  private hasExternalAuthMarker(): boolean {
+    try {
+      return sessionStorage.getItem(MICROSOFT_OAUTH_MARKER) === 'true';
+    } catch {
+      return false;
+    }
+  }
+
+  private clearExternalAuthMarker(): void {
+    try {
+      sessionStorage.removeItem(MICROSOFT_OAUTH_MARKER);
+    } catch {
+      // Ignora erros caso o storage esteja desabilitado.
+    }
   }
 }
