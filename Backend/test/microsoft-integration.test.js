@@ -18,6 +18,7 @@ class FakeSupabase {
   constructor() {
     this.microsoft_oauth_states = [];
     this.user_microsoft_connections = [];
+    this.user_sessions = [];
     this.sequence = 0;
   }
 
@@ -172,6 +173,13 @@ test("state é aleatório, fica armazenado como hash e só pode ser consumido um
 
 test("callback troca tokens simulados, cifra antes de persistir e status não vaza segredos", async () => {
   const database = new FakeSupabase();
+  database.user_sessions.push({
+    id: "session-1",
+    user_id: "user-1",
+    jti: "jti-1",
+    revoked_at: null,
+  });
+  const sessionsBefore = structuredClone(database.user_sessions);
   const state = await createMicrosoftOAuthState("user-1", { supabase: database });
   const nativeFetch = globalThis.fetch;
   globalThis.fetch = async (url) => {
@@ -214,6 +222,7 @@ test("callback troca tokens simulados, cifra antes de persistir e status não va
   });
   assert.equal(Object.hasOwn(status, "access_token"), false);
   assert.equal(Object.hasOwn(status, "refresh_token"), false);
+  assert.deepEqual(database.user_sessions, sessionsBefore);
 });
 
 test("disconnect marca a conexão como revogada e refresh atualiza tokens expirados", async () => {

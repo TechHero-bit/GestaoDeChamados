@@ -46,7 +46,11 @@ export class IdleService {
       )
         .pipe(
           throttleTime(1000), // Limita leitura de eventos a 1 vez por segundo
-          filter(() => this.authService.isAuthenticated()),
+          filter(
+            () =>
+              this.authService.isAuthenticated() &&
+              !this.authService.externalAuthInProgress(),
+          ),
         )
         .subscribe(() => {
           this.lastActiveTimestamp = Date.now();
@@ -62,7 +66,11 @@ export class IdleService {
 
       // Timer a cada 15 segundos para verificar o tempo decorrido
       this.checkTimer = setInterval(() => {
-        if (!this.authService.isAuthenticated()) return;
+        if (
+          !this.authService.isAuthenticated() ||
+          this.authService.externalAuthInProgress()
+        )
+          return;
 
         const now = Date.now();
         const elapsed = now - this.lastActiveTimestamp;
