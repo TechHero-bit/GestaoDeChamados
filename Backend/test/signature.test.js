@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { Readable } from "node:stream";
 import { after, before, test } from "node:test";
 import app from "../src/app.js";
 import {
@@ -10,6 +11,7 @@ import {
   uploadUserSignature,
 } from "../src/services/signature.service.js";
 import { composeTicketReplyHtml } from "../src/services/ticket-reply.service.js";
+import { parseMultipart } from "../src/middlewares/multipart.middleware.js";
 
 const USER_ID = "3aa8a815-efb3-4972-bf52-6156e046cd95";
 const PNG = Buffer.from("89504e470d0a1a0a", "hex");
@@ -123,6 +125,27 @@ test("endpoints de assinatura exigem autenticação", async () => {
   }
 });
 
+test("multipart FormData chega em req.file no campo signature", async () => {
+  const formData = new FormData();
+  formData.append("signature", new Blob([PNG], { type: "image/png" }), "signature.png");
+  const request = new Request("http://localhost/upload", { method: "POST", body: formData });
+  const req = Readable.from([Buffer.from(await request.arrayBuffer())]);
+  req.headers = { "content-type": request.headers.get("content-type") };
+
+  await new Promise((resolve, reject) => {
+    parseMultipart(
+      req,
+      { status: () => ({ json: reject }) },
+      () => resolve(),
+    );
+    req.on("error", reject);
+  });
+
+  assert.equal(req.file.fieldname, "signature");
+  assert.equal(req.file.originalname, "signature.png");
+  assert.equal(req.file.mimetype, "image/png");
+  assert.deepEqual(req.file.buffer, PNG);
+});
 test("validação aceita PNG real e rejeita MIME ou magic bytes falsos", () => {
   const valid = { originalname: "signature.png", mimetype: "image/png", buffer: PNG };
   assert.equal(isValidPngFile(valid), true);

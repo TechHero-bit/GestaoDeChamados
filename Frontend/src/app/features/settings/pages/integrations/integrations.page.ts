@@ -59,7 +59,13 @@ export class IntegrationsPage implements OnInit, OnDestroy {
       .pipe(finalize(() => this.signatureLoading.set(false)))
       .subscribe({
         next: (signature) => this.signature.set(signature),
-        error: () => this.errorMessage.set('Não foi possível consultar a assinatura de e-mail.'),
+        error: (error) =>
+          this.errorMessage.set(
+            this.getBackendErrorMessage(
+              error,
+              'Não foi possível consultar a assinatura de e-mail.',
+            ),
+          ),
       });
   }
 
@@ -120,7 +126,10 @@ export class IntegrationsPage implements OnInit, OnDestroy {
           this.releaseLocalPreview();
           this.feedbackMessage.set('Assinatura salva com sucesso.');
         },
-        error: (error) => this.errorMessage.set(error.error?.message || 'Não foi possível salvar a assinatura.'),
+        error: (error) =>
+          this.errorMessage.set(
+            this.getBackendErrorMessage(error, 'Não foi possível salvar a assinatura.'),
+          ),
       });
   }
 
@@ -134,7 +143,9 @@ export class IntegrationsPage implements OnInit, OnDestroy {
       .subscribe({
         next: (signature) => this.signature.set(signature),
         error: (error) => {
-          this.errorMessage.set(error.error?.message || 'Não foi possível atualizar a assinatura.');
+          this.errorMessage.set(
+            this.getBackendErrorMessage(error, 'Não foi possível atualizar a assinatura.'),
+          );
         },
       });
   }
@@ -152,8 +163,25 @@ export class IntegrationsPage implements OnInit, OnDestroy {
           this.releaseLocalPreview();
           this.feedbackMessage.set('Assinatura removida.');
         },
-        error: (error) => this.errorMessage.set(error.error?.message || 'Não foi possível remover a assinatura.'),
+        error: (error) =>
+          this.errorMessage.set(
+            this.getBackendErrorMessage(error, 'Não foi possível remover a assinatura.'),
+          ),
       });
+  }
+
+  private getBackendErrorMessage(error: unknown, fallback: string): string {
+    const response = error as { error?: unknown; message?: unknown };
+    const payload = response?.error;
+
+    if (payload && typeof payload === 'object' && 'message' in payload) {
+      const message = (payload as { message?: unknown }).message;
+      if (typeof message === 'string' && message.trim()) return message;
+    }
+
+    if (typeof payload === 'string' && payload.trim()) return payload;
+    if (typeof response?.message === 'string' && response.message.trim()) return response.message;
+    return fallback;
   }
 
   private releaseLocalPreview(): void {

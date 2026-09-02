@@ -3,10 +3,34 @@ import { getSupabase } from "../config/supabase.js";
 export const SIGNATURE_BUCKET = "Assinaturas";
 const PNG_MAGIC_BYTES = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 
-function databaseError(action, cause) {
-  return Object.assign(new Error(`Não foi possível ${action}.`), {
+function safeSupabaseMessage(error) {
+  const message = String(error?.message || "Erro retornado pelo Supabase.")
+    .replace(/[\r\n]+/g, " ")
+    .replace(/(?:service_role|secret|access_token|eyJ[a-zA-Z0-9._-]+)/gi, "[redacted]")
+    .trim();
+
+  return message.slice(0, 300);
+}
+
+function isMissingSignatureColumn(error) {
+  return error?.code === "42703" || error?.code === "PGRST204" || /signature_(?:enabled|storage_path).*does not exist|schema cache/i.test(String(error?.message));
+}
+
+function databaseError(action, stage, userId, cause) {
+  const supabaseMessage = safeSupabaseMessage(cause);
+  const message = isMissingSignatureColumn(cause)
+    ? "A configuração da assinatura não está disponível no banco de dados. A migration anterior não foi aplicada."
+    : `Não foi possível ${action}: ${supabaseMessage}`;
+
+  return Object.assign(new Error(message), {
     statusCode: 502,
-    cause,
+    signatureError: true,
+    signatureLog: {
+      stage,
+      status: 502,
+      supabaseMessage,
+      userId,
+    },
   });
 }
 
@@ -66,7 +90,7 @@ export async function getUserSignature(userId, { supabase = getSupabase() } = {}
     .eq("id", userId)
     .maybeSingle();
 
-  if (error) throw databaseError("consultar a assinatura do usuário", error);
+  if (error) throw databaseError("consultar a assinatura do usuário", "database.select", userId, error);
   return formatSignature(userId, data, supabase);
 }
 
@@ -74,6 +98,13 @@ export async function uploadUserSignature(userId, file, { supabase = getSupabase
   if (!isValidPngFile(file)) {
     throw Object.assign(new Error("A assinatura deve ser um arquivo PNG válido."), {
       statusCode: 400,
+      signatureError: true,
+      signatureLog: {
+        stage: "validation",
+        status: 400,
+        supabaseMessage: null,
+        userId,
+      },
     });
   }
 
@@ -83,7 +114,7 @@ export async function uploadUserSignature(userId, file, { supabase = getSupabase
     upsert: true,
   });
 
-  if (uploadError) throw databaseError("salvar a assinatura no Storage", uploadError);
+  if (uploadError) throw databaseError("salvar a assinatura no Storage", "storage.upload", userId, uploadError);
 
   const { error: updateError } = await supabase
     .from("users")
@@ -92,7 +123,7 @@ export async function uploadUserSignature(userId, file, { supabase = getSupabase
 
   if (updateError) {
     await supabase.storage.from(SIGNATURE_BUCKET).remove([path]).catch(() => undefined);
-    throw databaseError("salvar a configuração da assinatura", updateError);
+    throw databaseError("salvar a configuração da assinatura", "database.update", userId, updateError);
   }
 
   return getUserSignature(userId, { supabase });
@@ -104,19 +135,19 @@ export async function updateUserSignatureSettings(userId, enabled, { supabase = 
     .update({ signature_enabled: enabled })
     .eq("id", userId);
 
-  if (error) throw databaseError("atualizar as configurações da assinatura", error);
+  if (error) throw databaseError("atualizar as configurações da assinatura", "database.update", userId, error);
   return getUserSignature(userId, { supabase });
 }
 
 export async function deleteUserSignature(userId, { supabase = getSupabase() } = {}) {
   const path = signatureStoragePath(userId);
   const { error: removeError } = await supabase.storage.from(SIGNATURE_BUCKET).remove([path]);
-  if (removeError) throw databaseError("remover a assinatura do Storage", removeError);
+  if (removeError) throw databaseError("remover a assinatura do Storage", "storage.remove", userId, removeError);
 
   const { error: updateError } = await supabase
     .from("users")
     .update({ signature_enabled: false, signature_storage_path: null })
     .eq("id", userId);
 
-  if (updateError) throw databaseError("limpar a configuração da assinatura", updateError);
+  if (updateError) throw databaseError("limpar a configuração da assinatura", "database.update", userId, updateError);
 }

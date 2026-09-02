@@ -4,7 +4,7 @@
  */
 export function parseMultipart(req, res, next) {
   const contentType = req.headers["content-type"] || "";
-  const boundaryMatch = contentType.match(/boundary=(?:"([^"]+)"|([^;]+))/i);
+  const boundaryMatch = contentType.match(/^multipart\/form-data\s*;\s*boundary=(?:"([^"]+)"|([^;]+))/i);
 
   if (!boundaryMatch) {
     return res.status(400).json({

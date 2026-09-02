@@ -15,7 +15,8 @@ export class SignatureService {
 
   upload(file: File): Observable<SignatureStatus> {
     const formData = new FormData();
-    formData.append('signature', file, file.name);
+    formData.append('signature', file);
+    // Não definir Content-Type: o navegador inclui o boundary automaticamente.
     return this.http.post<SignatureStatus>(this.apiUrl, formData);
   }
 
