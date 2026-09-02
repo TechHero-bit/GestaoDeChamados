@@ -8,6 +8,14 @@ export interface User {
   data_criacao?: string;
 }
 
+
+export interface SignatureStatus {
+  success?: boolean;
+  enabled: boolean;
+  has_signature: boolean;
+  image_url: string | null;
+}
+
 export interface LoginCredentials {
   email: string;
   password: string;

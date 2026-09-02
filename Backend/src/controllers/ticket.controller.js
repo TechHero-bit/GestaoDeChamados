@@ -9,6 +9,7 @@ import {
   ticketIdSchema,
   updateTicketSchema,
 } from "../schemas/ticket.schema.js";
+import { getUserSignature } from "../services/signature.service.js";
 
 function validationError(res, resultado, message = "Dados inválidos.") {
   return res.status(400).json({
@@ -171,6 +172,7 @@ export async function responderTicket(req, res, next) {
       ticket,
       userId: req.user.id,
       message: resultado.data.mensagem,
+      getSignature: getUserSignature,
     });
 
     return res.status(201).json({

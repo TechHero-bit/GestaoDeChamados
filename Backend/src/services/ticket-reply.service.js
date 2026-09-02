@@ -1,5 +1,5 @@
 import { sendTicketReply } from "./email.service.js";
-import { replyToMicrosoftMessage } from "./microsoft-graph.service.js";
+import { replyToMicrosoftMessage, safeHtmlFromText } from "./microsoft-graph.service.js";
 import { getMicrosoftConnectionStatus } from "./microsoft-oauth.service.js";
 import { adicionarMensagem, getHelpdeskEmail } from "./ticket.service.js";
 
@@ -17,6 +17,25 @@ function microsoftSenderEmail(connection, fallback) {
   return email || fallback();
 }
 
+function escapeHtmlAttribute(value) {
+  return String(value).replace(/[&<>"']/g, (character) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    '"': "&quot;",
+    "'": "&#39;",
+  })[character]);
+}
+
+export function composeTicketReplyHtml(message, signature) {
+  const safeMessage = safeHtmlFromText(message);
+  if (!signature?.enabled || !signature?.has_signature || !signature?.image_url) {
+    return safeMessage;
+  }
+
+  return `<div>${safeMessage}</div><br><img src="${escapeHtmlAttribute(signature.image_url)}" alt="Assinatura" style="max-width:700px;height:auto;">`;
+}
+
 /**
  * Seleciona o provedor exclusivamente a partir do usuário autenticado e só
  * registra a mensagem depois que um provedor confirma o envio.
@@ -29,6 +48,8 @@ export async function sendAndPersistTicketReply(
     replyWithPowerAutomate = sendTicketReply,
     persistMessage = adicionarMensagem,
     helpdeskEmail = getHelpdeskEmail,
+    // O controller injeta a consulta real; o fallback nulo mantém o serviço isolável em testes.
+    getSignature = async () => null,
   } = {},
 ) {
   if (!userId) {
@@ -46,12 +67,14 @@ export async function sendAndPersistTicketReply(
   }
 
   const connection = await getConnectionStatus(userId);
+  const signature = await getSignature(userId);
+  const finalHtml = composeTicketReplyHtml(message, signature);
   const powerAutomatePayload = {
     ticketId: ticket.id,
     messageId,
     destinatario: ticket.remetente_email,
     assunto: replySubject(ticket.assunto),
-    mensagem: message,
+    mensagem: finalHtml,
     prioridade: ticket.prioridade ?? "Normal",
   };
 
@@ -60,7 +83,9 @@ export async function sendAndPersistTicketReply(
 
   if (connection.connected) {
     try {
-      await replyWithMicrosoftGraph(userId, { messageId, message });
+      const graphPayload = { messageId, message };
+      if (finalHtml !== message) graphPayload.html = finalHtml;
+      await replyWithMicrosoftGraph(userId, graphPayload);
       provider = "microsoft_graph";
       senderEmail = microsoftSenderEmail(connection, helpdeskEmail);
     } catch (error) {

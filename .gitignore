@@ -42,3 +42,9 @@ coverage/
 database/
 database/migrations/
 database/Migrations/
+# Nova migration de assinaturas
+!database/
+database/*
+!database/migrations/
+database/migrations/*
+!database/migrations/008_add_user_email_signatures.sql

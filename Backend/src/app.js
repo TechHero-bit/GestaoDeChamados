@@ -5,6 +5,7 @@ import helmet from "helmet";
 import { errorMiddleware } from "./middlewares/error.middleware.js";
 import authRoutes from "./routes/auth.routes.js";
 import microsoftIntegrationRoutes from "./routes/microsoft-integration.routes.js";
+import signatureRoutes from "./routes/signature.routes.js";
 import ticketRoutes from "./routes/ticket.routes.js";
 import webhookRoutes from "./routes/webhook.routes.js";
 
@@ -69,6 +70,7 @@ app.use((req, res, next) => {
   if (
     req.path.startsWith("/api/tickets") ||
     req.path.startsWith("/api/auth") ||
+    req.path.startsWith("/api/profile") ||
     req.path.startsWith("/api/integrations/microsoft")
   ) {
     res.setHeader(
@@ -89,6 +91,7 @@ app.get("/health", (_req, res) => {
 // Rotas da API
 app.use("/api/auth", authRoutes);
 app.use("/api/integrations/microsoft", microsoftIntegrationRoutes);
+app.use("/api/profile", signatureRoutes);
 app.use("/api/tickets", ticketRoutes);
 app.use("/api/webhooks", webhookRoutes);
 

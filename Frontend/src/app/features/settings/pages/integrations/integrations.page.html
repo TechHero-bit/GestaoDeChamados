@@ -17,7 +17,7 @@
       </div>
     }
 
-    <section class="card overflow-hidden">
+    <section class="card mb-6 overflow-hidden">
       <div class="card-header">
         <div class="flex size-10 items-center justify-center rounded-lg bg-primary-fixed text-primary">
           <span class="material-symbols-outlined" aria-hidden="true">mail</span>
@@ -63,5 +63,77 @@
       </div>
     </section>
 
+    <section class="card overflow-hidden">
+      <div class="card-header">
+        <div class="flex size-10 items-center justify-center rounded-lg bg-primary-fixed text-primary">
+          <span class="material-symbols-outlined" aria-hidden="true">draw</span>
+        </div>
+        <div>
+          <h2 class="font-semibold text-on-surface">Assinatura de e-mail</h2>
+          <p class="text-xs text-on-surface-variant">Imagem PNG usada nas suas respostas</p>
+        </div>
+      </div>
+
+      <div class="space-y-6 p-5 sm:p-6">
+        @if (signatureLoading()) {
+          <div class="space-y-3" aria-label="Carregando assinatura">
+            <div class="skeleton h-4 w-40"></div>
+            <div class="skeleton h-24 w-full max-w-xl"></div>
+          </div>
+        } @else {
+          <label class="flex cursor-pointer items-center gap-3 text-sm font-semibold text-on-surface">
+            <input
+              class="size-4 accent-primary"
+              type="checkbox"
+              [checked]="signature()?.enabled ?? false"
+              [disabled]="signatureToggling()"
+              (change)="toggleSignature($event)"
+            />
+            Usar assinatura nas respostas
+          </label>
+
+          <div>
+            <p class="mb-2 text-sm font-semibold text-on-surface">Assinatura atual</p>
+            @if (localPreviewUrl() || signature()?.image_url) {
+              <div class="flex min-h-28 items-center justify-center overflow-hidden rounded-lg border border-outline-variant bg-surface-container-low p-3">
+                <img
+                  class="max-h-48 max-w-full object-contain"
+                  [src]="localPreviewUrl() || signature()?.image_url || ''"
+                  alt="Prévia da assinatura de e-mail"
+                />
+              </div>
+            } @else {
+              <div class="rounded-lg border border-dashed border-outline-variant bg-surface-container-low px-4 py-8 text-center text-sm text-on-surface-variant">
+                Nenhuma assinatura cadastrada.
+              </div>
+            }
+          </div>
+
+          <div class="flex flex-wrap gap-3">
+            <label class="secondary-button cursor-pointer">
+              <span class="material-symbols-outlined text-base" aria-hidden="true">upload</span>
+              Alterar assinatura
+              <input class="sr-only" type="file" accept=".png,image/png" (change)="onFileSelected($event)" />
+            </label>
+            @if (signature()?.has_signature || localPreviewUrl()) {
+              <button class="secondary-button" type="button" [disabled]="signatureRemoving()" (click)="removeSignature()">
+                <span class="material-symbols-outlined text-base" aria-hidden="true">delete</span>
+                {{ signatureRemoving() ? 'Removendo...' : 'Remover' }}
+              </button>
+            }
+          </div>
+
+          @if (selectedFile()) {
+            <div class="flex flex-col gap-3 rounded-lg border border-primary/20 bg-primary/5 p-4 sm:flex-row sm:items-center sm:justify-between">
+              <p class="text-sm text-on-surface-variant">Arquivo selecionado: <span class="font-semibold text-on-surface">{{ selectedFile()?.name }}</span></p>
+              <button class="primary-button shrink-0" type="button" [disabled]="signatureSaving()" (click)="saveSignature()">
+                <span class="material-symbols-outlined text-base" aria-hidden="true">save</span>
+                {{ signatureSaving() ? 'Salvando...' : 'Salvar assinatura' }}
+              </button>
+            </div>
+          }
+        }
+      </div>
+    </section>
   </div>
 </main>

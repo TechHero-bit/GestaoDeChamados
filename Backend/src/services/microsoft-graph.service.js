@@ -62,7 +62,7 @@ export async function sendMicrosoftEmail(
 }
 
 
-function safeHtmlFromText(text) {
+export function safeHtmlFromText(text) {
   return String(text).replace(/[&<>"']/g, (character) => ({
     "&": "&amp;",
     "<": "&lt;",
@@ -135,7 +135,7 @@ function isPreSendNetworkError(error) {
  */
 export async function replyToMicrosoftMessage(
   userId,
-  { messageId, message },
+  { messageId, message, html },
   { getAccessToken = getValidMicrosoftAccessToken, fetchImpl = globalThis.fetch } = {},
 ) {
   if (typeof messageId !== "string" || messageId.trim().length === 0) {
@@ -184,7 +184,7 @@ export async function replyToMicrosoftMessage(
           message: {
             body: {
               contentType: "HTML",
-              content: safeHtmlFromText(message),
+              content: typeof html === "string" ? html : safeHtmlFromText(message),
             },
           },
         }),
