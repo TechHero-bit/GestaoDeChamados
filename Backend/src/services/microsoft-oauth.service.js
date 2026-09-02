@@ -17,17 +17,46 @@ function serviceError(message, statusCode = 502, cause) {
   return Object.assign(new Error(message), { statusCode, cause });
 }
 
-function microsoftTokenError(message, statusCode, userId, stage, connection, cause) {
+function safeDiagnosticValue(value) {
+  return String(value).replace(/[^a-zA-Z0-9_.:-]/g, "_").slice(0, 120);
+}
+
+export function logMicrosoftDiagnostic(stage, {
+  userId,
+  connectionFound,
+  accessTokenExpired,
+  status,
+  code,
+  errorName,
+  success,
+} = {}) {
+  const fields = [`stage=${safeDiagnosticValue(stage)}`];
+  if (userId) fields.push(`userId=${safeDiagnosticValue(userId)}`);
+  if (typeof connectionFound === "boolean") fields.push(`connectionFound=${connectionFound}`);
+  if (typeof accessTokenExpired === "boolean") fields.push(`accessTokenExpired=${accessTokenExpired}`);
+  if (typeof status === "number") fields.push(`status=${status}`);
+  if (typeof code === "string" && code) fields.push(`code=${safeDiagnosticValue(code)}`);
+  if (typeof errorName === "string" && errorName) fields.push(`errorName=${safeDiagnosticValue(errorName)}`);
+  if (typeof success === "boolean") fields.push(`success=${success}`);
+  console.log(`[MICROSOFT_DIAG] ${fields.join(" ")}`);
+}
+
+function microsoftTokenError(message, statusCode, userId, stage, connectionState, cause, diagnosticCode) {
+  const microsoftAuthLog = {
+    stage,
+    status: statusCode,
+    connectionFound: connectionState === "present",
+    code: diagnosticCode || cause?.code || null,
+    errorName: cause?.constructor?.name || null,
+    userId,
+  };
+  logMicrosoftDiagnostic(stage, microsoftAuthLog);
+
   return Object.assign(new Error(message), {
     statusCode,
     microsoftAuthError: true,
-    microsoftAuthLog: {
-      stage,
-      status: statusCode,
-      connection,
-      code: cause?.code || cause?.name || null,
-      userId,
-    },
+    diagnosticCode,
+    microsoftAuthLog,
   });
 }
 
@@ -39,7 +68,10 @@ async function readJson(response) {
   }
 }
 
-async function requestToken(body, { fetchImpl = globalThis.fetch } = {}) {
+async function requestToken(
+  body,
+  { fetchImpl = globalThis.fetch, diagnosticStage, userId } = {},
+) {
   const config = getMicrosoftConfig();
   const response = await fetchImpl(config.tokenUrl, {
     method: "POST",
@@ -52,6 +84,15 @@ async function requestToken(body, { fetchImpl = globalThis.fetch } = {}) {
     }),
   });
   const data = await readJson(response);
+  if (diagnosticStage) {
+    logMicrosoftDiagnostic(diagnosticStage, {
+      userId,
+      connectionFound: true,
+      status: response.status,
+      code: typeof data.error === "string" ? data.error : undefined,
+      errorName: !response.ok || !data.access_token ? "MicrosoftTokenError" : undefined,
+    });
+  }
 
   if (!response.ok || !data.access_token) {
     throw serviceError("Não foi possível concluir a autorização Microsoft.");
@@ -208,8 +249,14 @@ export async function getMicrosoftConnectionStatus(userId, { supabase = getSupab
       "connection.status",
       "query_failed",
       error,
+      "MICROSOFT_CONNECTION_LOOKUP_FAILED",
     );
   }
+
+  logMicrosoftDiagnostic("connection.lookup", {
+    userId,
+    connectionFound: Boolean(data),
+  });
   return data
     ? {
         connected: true,
@@ -251,6 +298,7 @@ export async function getValidMicrosoftAccessToken(
       "connection.lookup",
       "query_failed",
       error,
+      "MICROSOFT_CONNECTION_LOOKUP_FAILED",
     );
   }
 
@@ -269,6 +317,7 @@ export async function getValidMicrosoftAccessToken(
         "connection.lookup",
         "query_failed",
         stateError,
+        "MICROSOFT_CONNECTION_LOOKUP_FAILED",
       );
     }
 
@@ -279,13 +328,35 @@ export async function getValidMicrosoftAccessToken(
       userId,
       "connection.lookup",
       connectionState,
+      undefined,
+      connectionState === "revoked"
+        ? "MICROSOFT_CONNECTION_REVOKED"
+        : "MICROSOFT_CONNECTION_NOT_FOUND",
     );
   }
 
+  logMicrosoftDiagnostic("connection.lookup", {
+    userId,
+    connectionFound: true,
+  });
+
   const expiresAt = new Date(data.access_token_expires_at).getTime();
-  if (Number.isFinite(expiresAt) && expiresAt - now.getTime() > TOKEN_SKEW_MS) {
+  const accessTokenExpired = !Number.isFinite(expiresAt) || expiresAt - now.getTime() <= TOKEN_SKEW_MS;
+  logMicrosoftDiagnostic("token.expiration", {
+    userId,
+    connectionFound: true,
+    accessTokenExpired,
+  });
+
+  if (!accessTokenExpired) {
     try {
-      return decryptMicrosoftToken(data.access_token_encrypted);
+      const accessToken = decryptMicrosoftToken(data.access_token_encrypted);
+      logMicrosoftDiagnostic("token.decrypt", {
+        userId,
+        connectionFound: true,
+        success: true,
+      });
+      return accessToken;
     } catch (cause) {
       throw microsoftTokenError(
         cause.message,
@@ -294,6 +365,7 @@ export async function getValidMicrosoftAccessToken(
         "token.decrypt",
         "present",
         cause,
+        "MICROSOFT_TOKEN_DECRYPT_FAILED",
       );
     }
   }
@@ -301,6 +373,11 @@ export async function getValidMicrosoftAccessToken(
   let refreshToken;
   try {
     refreshToken = decryptMicrosoftToken(data.refresh_token_encrypted);
+    logMicrosoftDiagnostic("token.decrypt", {
+      userId,
+      connectionFound: true,
+      success: true,
+    });
   } catch (cause) {
     throw microsoftTokenError(
       cause.message,
@@ -309,6 +386,7 @@ export async function getValidMicrosoftAccessToken(
       "token.decrypt",
       "present",
       cause,
+      "MICROSOFT_TOKEN_DECRYPT_FAILED",
     );
   }
 
@@ -316,7 +394,7 @@ export async function getValidMicrosoftAccessToken(
   try {
     refreshed = await requestToken(
       { refresh_token: refreshToken, grant_type: "refresh_token" },
-      { fetchImpl },
+      { fetchImpl, diagnosticStage: "token.refresh", userId },
     );
   } catch (cause) {
     throw microsoftTokenError(
@@ -326,6 +404,7 @@ export async function getValidMicrosoftAccessToken(
       "token.refresh",
       "present",
       cause,
+      "MICROSOFT_TOKEN_REFRESH_FAILED",
     );
   }
   const refreshedExpiresIn = Number.parseInt(refreshed.expires_in, 10);
@@ -353,6 +432,7 @@ export async function getValidMicrosoftAccessToken(
       "token.persist",
       "present",
       updateError,
+      "MICROSOFT_TOKEN_REFRESH_FAILED",
     );
   }
 

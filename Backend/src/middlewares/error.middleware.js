@@ -6,11 +6,20 @@ export function errorMiddleware(err, req, res, _next) {
   const statusCode = err.statusCode || 500;
   const message = err.message || "Erro interno do servidor.";
 
-  if (err.microsoftAuthError) {
-    console.error("❌ Erro Microsoft:", err.microsoftAuthLog);
+  if (err.microsoftDiagnosticError) {
     return res.status(statusCode).json({
       success: false,
       message,
+      code: err.diagnosticCode,
+    });
+  }
+
+  if (err.microsoftAuthError) {
+
+    return res.status(statusCode).json({
+      success: false,
+      message,
+      code: err.diagnosticCode,
     });
   }
 

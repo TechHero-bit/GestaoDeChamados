@@ -1,4 +1,4 @@
-import { getValidMicrosoftAccessToken } from "./microsoft-oauth.service.js";
+import { getValidMicrosoftAccessToken, logMicrosoftDiagnostic } from "./microsoft-oauth.service.js";
 
 const GRAPH_SEND_MAIL_URL = "https://graph.microsoft.com/v1.0/me/sendMail";
 
@@ -116,9 +116,24 @@ function graphReplyError(status) {
   return Object.assign(new Error(details.message), {
     statusCode: 502,
     publicCode: details.code,
+    diagnosticCode: "MICROSOFT_GRAPH_REPLY_FAILED",
+    microsoftDiagnosticError: true,
     graphStatus: status,
     safeToFallback: details.safeToFallback === true,
   });
+}
+
+async function readGraphErrorCode(response) {
+  try {
+    const payload = await response.clone().json();
+    return typeof payload?.error?.code === "string"
+      ? payload.error.code
+      : typeof payload?.error === "string"
+        ? payload.error
+        : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 function isPreSendNetworkError(error) {
@@ -150,6 +165,7 @@ export async function replyToMicrosoftMessage(
       throw Object.assign(new Error("Conta Microsoft não conectada."), {
         statusCode: 404,
         publicCode: "MICROSOFT_NOT_CONNECTED",
+        diagnosticCode: "MICROSOFT_CONNECTION_NOT_FOUND",
         safeToFallback: true,
         microsoftAuthError: error.microsoftAuthError === true,
         microsoftAuthLog: error.microsoftAuthLog,
@@ -162,6 +178,13 @@ export async function replyToMicrosoftMessage(
         safeToFallback: false,
         microsoftAuthError: true,
         microsoftAuthLog: error.microsoftAuthLog,
+        diagnosticCode: error.diagnosticCode || "MICROSOFT_TOKEN_REFRESH_FAILED",
+      });
+    }
+    if (!error?.microsoftAuthError) {
+      logMicrosoftDiagnostic("token.acquire", {
+        userId,
+        errorName: error?.constructor?.name || "Error",
       });
     }
     if (isPreSendNetworkError(error)) {
@@ -202,7 +225,11 @@ export async function replyToMicrosoftMessage(
         signal: AbortSignal.timeout(15000),
       },
     );
-  } catch {
+  } catch (error) {
+    logMicrosoftDiagnostic("graph.reply", {
+      userId,
+      errorName: error?.constructor?.name || "Error",
+    });
     throw Object.assign(new Error("Não foi possível confirmar se o Microsoft Outlook enviou a resposta."), {
       statusCode: 502,
       publicCode: "GRAPH_DELIVERY_UNKNOWN",
@@ -211,6 +238,19 @@ export async function replyToMicrosoftMessage(
   }
 
   if (response.status !== 202) {
+    const externalCode = await readGraphErrorCode(response);
+    logMicrosoftDiagnostic("graph.reply", {
+      userId,
+      status: response.status,
+      code: externalCode,
+      errorName: "MicrosoftGraphError",
+    });
     throw graphReplyError(response.status);
   }
+
+  logMicrosoftDiagnostic("graph.reply", {
+    userId,
+    status: response.status,
+    success: true,
+  });
 }
