@@ -6,6 +6,14 @@ export function errorMiddleware(err, req, res, _next) {
   const statusCode = err.statusCode || 500;
   const message = err.message || "Erro interno do servidor.";
 
+  if (err.microsoftAuthError) {
+    console.error("❌ Erro Microsoft:", err.microsoftAuthLog);
+    return res.status(statusCode).json({
+      success: false,
+      message,
+    });
+  }
+
   if (err.signatureError) {
     console.error("❌ Erro de assinatura:", err.signatureLog);
     return res.status(statusCode).json({

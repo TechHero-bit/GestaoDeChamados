@@ -151,6 +151,17 @@ export async function replyToMicrosoftMessage(
         statusCode: 404,
         publicCode: "MICROSOFT_NOT_CONNECTED",
         safeToFallback: true,
+        microsoftAuthError: error.microsoftAuthError === true,
+        microsoftAuthLog: error.microsoftAuthLog,
+      });
+    }
+    if (error?.microsoftAuthError) {
+      throw Object.assign(new Error(error.message), {
+        statusCode: error.statusCode || 502,
+        publicCode: "MICROSOFT_TOKEN_UNAVAILABLE",
+        safeToFallback: false,
+        microsoftAuthError: true,
+        microsoftAuthLog: error.microsoftAuthLog,
       });
     }
     if (isPreSendNetworkError(error)) {

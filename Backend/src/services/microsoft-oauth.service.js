@@ -17,6 +17,20 @@ function serviceError(message, statusCode = 502, cause) {
   return Object.assign(new Error(message), { statusCode, cause });
 }
 
+function microsoftTokenError(message, statusCode, userId, stage, connection, cause) {
+  return Object.assign(new Error(message), {
+    statusCode,
+    microsoftAuthError: true,
+    microsoftAuthLog: {
+      stage,
+      status: statusCode,
+      connection,
+      code: cause?.code || cause?.name || null,
+      userId,
+    },
+  });
+}
+
 async function readJson(response) {
   try {
     return await response.json();
@@ -187,7 +201,14 @@ export async function getMicrosoftConnectionStatus(userId, { supabase = getSupab
     .maybeSingle();
 
   if (error) {
-    throw serviceError("Não foi possível consultar a conexão Microsoft.", 502, error);
+    throw microsoftTokenError(
+      "Não foi possível consultar a conexão Microsoft.",
+      502,
+      userId,
+      "connection.status",
+      "query_failed",
+      error,
+    );
   }
   return data
     ? {
@@ -222,19 +243,91 @@ export async function getValidMicrosoftAccessToken(
     .is("revoked_at", null)
     .maybeSingle();
 
-  if (error) throw serviceError("Não foi possível consultar a conexão Microsoft.", 502, error);
-  if (!data) throw serviceError("Conta Microsoft não conectada.", 404);
+  if (error) {
+    throw microsoftTokenError(
+      "Não foi possível consultar a conexão Microsoft.",
+      502,
+      userId,
+      "connection.lookup",
+      "query_failed",
+      error,
+    );
+  }
+
+  if (!data) {
+    const { data: existingConnection, error: stateError } = await supabase
+      .from("user_microsoft_connections")
+      .select("revoked_at")
+      .eq("user_id", userId)
+      .maybeSingle();
+
+    if (stateError) {
+      throw microsoftTokenError(
+        "Não foi possível consultar a conexão Microsoft.",
+        502,
+        userId,
+        "connection.lookup",
+        "query_failed",
+        stateError,
+      );
+    }
+
+    const connectionState = existingConnection ? "revoked" : "not_found";
+    throw microsoftTokenError(
+      "Conta Microsoft não conectada.",
+      404,
+      userId,
+      "connection.lookup",
+      connectionState,
+    );
+  }
 
   const expiresAt = new Date(data.access_token_expires_at).getTime();
   if (Number.isFinite(expiresAt) && expiresAt - now.getTime() > TOKEN_SKEW_MS) {
-    return decryptMicrosoftToken(data.access_token_encrypted);
+    try {
+      return decryptMicrosoftToken(data.access_token_encrypted);
+    } catch (cause) {
+      throw microsoftTokenError(
+        cause.message,
+        cause.statusCode || 502,
+        userId,
+        "token.decrypt",
+        "present",
+        cause,
+      );
+    }
   }
 
-  const refreshToken = decryptMicrosoftToken(data.refresh_token_encrypted);
-  const refreshed = await requestToken(
-    { refresh_token: refreshToken, grant_type: "refresh_token" },
-    { fetchImpl },
-  );
+  let refreshToken;
+  try {
+    refreshToken = decryptMicrosoftToken(data.refresh_token_encrypted);
+  } catch (cause) {
+    throw microsoftTokenError(
+      cause.message,
+      cause.statusCode || 502,
+      userId,
+      "token.decrypt",
+      "present",
+      cause,
+    );
+  }
+
+  let refreshed;
+  try {
+    refreshed = await requestToken(
+      { refresh_token: refreshToken, grant_type: "refresh_token" },
+      { fetchImpl },
+    );
+  } catch (cause) {
+    throw microsoftTokenError(
+      cause.message,
+      cause.statusCode || 502,
+      userId,
+      "token.refresh",
+      "present",
+      cause,
+    );
+  }
   const refreshedExpiresIn = Number.parseInt(refreshed.expires_in, 10);
   const newExpiresAt = new Date(
     now.getTime() + (Number.isFinite(refreshedExpiresIn) ? refreshedExpiresIn : 3600) * 1000,
@@ -252,7 +345,16 @@ export async function getValidMicrosoftAccessToken(
     .update(update)
     .eq("user_id", userId)
     .is("revoked_at", null);
-  if (updateError) throw serviceError("Não foi possível atualizar a conexão Microsoft.", 502, updateError);
+  if (updateError) {
+    throw microsoftTokenError(
+      "Não foi possível atualizar a conexão Microsoft.",
+      502,
+      userId,
+      "token.persist",
+      "present",
+      updateError,
+    );
+  }
 
   return refreshed.access_token;
 }
