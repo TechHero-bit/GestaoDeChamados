@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { getValidMicrosoftAccessToken, logMicrosoftDiagnostic } from "./microsoft-oauth.service.js";
 
 const GRAPH_SEND_MAIL_URL = "https://graph.microsoft.com/v1.0/me/sendMail";
@@ -61,6 +62,53 @@ export async function sendMicrosoftEmail(
   }
 }
 
+
+function foldBase64(value) {
+  return value.match(/.{1,76}/g)?.join("\r\n") || "";
+}
+
+export function buildInlineMimeReply({ html, imageBytes, contentId }) {
+  if (
+    typeof html !== "string" ||
+    !Buffer.isBuffer(imageBytes) ||
+    typeof contentId !== "string" ||
+    !/^[A-Za-z0-9._-]+$/.test(contentId)
+  ) {
+    throw Object.assign(new Error("Conteúdo MIME da assinatura inválido."), {
+      statusCode: 502,
+      publicCode: "SIGNATURE_LOAD_FAILED",
+      safeToFallback: false,
+    });
+  }
+
+  const boundary = `smartdesk-related-${randomUUID()}`;
+  const imageBase64 = foldBase64(imageBytes.toString("base64"));
+  const mime = [
+    "MIME-Version: 1.0",
+    `Content-Type: multipart/related; boundary="${boundary}"`,
+    "",
+    `--${boundary}`,
+    "Content-Type: text/html; charset=UTF-8",
+    "Content-Transfer-Encoding: 8bit",
+    "",
+    "<html>",
+    "<body>",
+    html,
+    "</body>",
+    "</html>",
+    `--${boundary}`,
+    "Content-Type: image/png",
+    "Content-Transfer-Encoding: base64",
+    `Content-ID: <${contentId}>`,
+    'Content-Disposition: inline; filename="signature.png"',
+    "",
+    imageBase64,
+    `--${boundary}--`,
+    "",
+  ].join("\r\n");
+
+  return Buffer.from(mime, "utf8").toString("base64");
+}
 
 export function safeHtmlFromText(text) {
   return String(text).replace(/[&<>"']/g, (character) => ({
@@ -150,7 +198,7 @@ function isPreSendNetworkError(error) {
  */
 export async function replyToMicrosoftMessage(
   userId,
-  { messageId, message, html },
+  { messageId, message, html, mime },
   { getAccessToken = getValidMicrosoftAccessToken, fetchImpl = globalThis.fetch } = {},
 ) {
   if (typeof messageId !== "string" || messageId.trim().length === 0) {
@@ -212,16 +260,18 @@ export async function replyToMicrosoftMessage(
         method: "POST",
         headers: {
           Authorization: `Bearer ${accessToken}`,
-          "Content-Type": "application/json",
+          "Content-Type": typeof mime === "string" ? "text/plain" : "application/json",
         },
-        body: JSON.stringify({
-          message: {
-            body: {
-              contentType: "HTML",
-              content: typeof html === "string" ? html : safeHtmlFromText(message),
-            },
-          },
-        }),
+        body: typeof mime === "string"
+          ? mime
+          : JSON.stringify({
+              message: {
+                body: {
+                  contentType: "HTML",
+                  content: typeof html === "string" ? html : safeHtmlFromText(message),
+                },
+              },
+            }),
         signal: AbortSignal.timeout(15000),
       },
     );

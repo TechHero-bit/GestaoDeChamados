@@ -20,7 +20,8 @@ function dependencies(connected) {
       return {
         enabled: true,
         has_signature: true,
-        image_url: "https://project.supabase.co/signature.png?v=1",
+        image_bytes: Buffer.from("89504e470d0a1a0a", "hex"),
+        storage_downloaded: true,
       };
     },
     replyWithMicrosoftGraph: async (_userId, payload) => {
@@ -47,7 +48,12 @@ test("assinatura habilitada chega ao Graph e a timeline guarda somente a mensage
   );
 
   assert.equal(deps.getExternalPayload().message, "Problema corrigido.");
-  assert.match(deps.getExternalPayload().html, /<img src="https:\/\/project\.supabase\.co/);
+  assert.equal(deps.getExternalPayload().html, undefined);
+  const mime = Buffer.from(deps.getExternalPayload().mime, "base64").toString("utf8");
+  assert.equal(mime.includes("multipart/related"), true);
+  assert.equal(mime.includes('src="cid:smartdesk-signature-'), true);
+  assert.equal(mime.includes("Content-Type: image/png"), true);
+  assert.equal(mime.includes('Content-Disposition: inline; filename="signature.png"'), true);
   assert.equal(deps.getPersisted().corpo_mensagem, "Problema corrigido.");
   assert.equal(deps.getPersisted().corpo_mensagem.includes("<img"), false);
 });
@@ -69,8 +75,13 @@ test("assinatura é consultada pelo usuário autenticado e não pode ser reutili
   deps.getSignature = async (userId) => {
     calls.push(userId);
     return userId === "user-a"
-      ? { enabled: true, has_signature: true, image_url: "https://project.supabase.co/a.png" }
-      : { enabled: false, has_signature: false, image_url: null };
+      ? {
+          enabled: true,
+          has_signature: true,
+          image_bytes: Buffer.from("89504e470d0a1a0a", "hex"),
+          storage_downloaded: true,
+        }
+      : { enabled: false, has_signature: false, image_bytes: null, storage_downloaded: false };
   };
 
   await sendAndPersistTicketReply({ ticket, userId: "user-b", message: "Sem assinatura alheia" }, deps);

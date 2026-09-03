@@ -189,13 +189,14 @@ test("HTML da assinatura é seguro, usa imagem pública no final e não altera a
   const html = composeTicketReplyHtml("Problema <corrigido>", {
     enabled: true,
     has_signature: true,
-    image_url: "https://project.supabase.co/signature.png?v=1",
+    content_id: "smartdesk-signature-test",
   });
 
   assert.match(html, /^<div>Problema &lt;corrigido&gt;<\/div><br><br><img/);
   assert.match(html, /alt="Assinatura"/);
+  assert.match(html, /src="cid:smartdesk-signature-test"/);
   assert.match(html, /max-width:700px/);
+  assert.equal(html.includes("https://"), false);
   assert.equal(html.includes("base64"), false);
-  assert.equal(html.includes("cid:"), false);
   assert.equal(composeTicketReplyHtml("Resposta", { enabled: false }), "Resposta");
 });
