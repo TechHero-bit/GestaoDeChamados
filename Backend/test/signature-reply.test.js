@@ -75,5 +75,6 @@ test("assinatura é consultada pelo usuário autenticado e não pode ser reutili
 
   await sendAndPersistTicketReply({ ticket, userId: "user-b", message: "Sem assinatura alheia" }, deps);
   assert.deepEqual(calls, ["user-b"]);
-  assert.equal(deps.getExternalPayload().html, undefined);
+  assert.equal(deps.getExternalPayload().html, "Sem assinatura alheia");
+  assert.equal(deps.getExternalPayload().html.includes("<img"), false);
 });

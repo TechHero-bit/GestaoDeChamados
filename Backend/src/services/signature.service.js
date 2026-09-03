@@ -74,12 +74,14 @@ function publicUrlWithVersion(supabase, path, updatedAt) {
 function formatSignature(userId, row, supabase) {
   const path = row?.signature_storage_path;
   const expectedPath = signatureStoragePath(userId);
-  const hasSignature = path === expectedPath;
+  const pathFound = typeof path === "string" && path.trim().length > 0;
+  const hasSignature = pathFound && path === expectedPath;
+  const enabled = row?.signature_enabled === true;
 
   return {
-    enabled: row?.signature_enabled === true,
+    enabled,
     has_signature: hasSignature,
-    image_url: hasSignature ? publicUrlWithVersion(supabase, path, row?.data_atualizacao) : null,
+    image_url: enabled && hasSignature ? publicUrlWithVersion(supabase, path, row?.data_atualizacao) : null,
   };
 }
 

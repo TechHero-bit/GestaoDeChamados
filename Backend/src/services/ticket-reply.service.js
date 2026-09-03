@@ -33,7 +33,16 @@ export function composeTicketReplyHtml(message, signature) {
     return safeMessage;
   }
 
-  return `<div>${safeMessage}</div><br><img src="${escapeHtmlAttribute(signature.image_url)}" alt="Assinatura" style="max-width:700px;height:auto;">`;
+  return `<div>${safeMessage}</div><br><img src="${escapeHtmlAttribute(signature.image_url)}" alt="Assinatura" style="display:block;max-width:700px;width:auto;height:auto;">`;
+}
+
+function logSignatureDiagnostic(signature, signatureAppended, provider) {
+  console.log(
+    `[SIGNATURE_DIAG] enabled=${signature?.enabled === true} ` +
+      `pathFound=${signature?.has_signature === true} ` +
+      `publicUrlGenerated=${typeof signature?.image_url === "string" && signature.image_url.length > 0} ` +
+      `signatureAppended=${signatureAppended} provider=${provider}`,
+  );
 }
 
 /**
@@ -68,13 +77,19 @@ export async function sendAndPersistTicketReply(
 
   const connection = await getConnectionStatus(userId);
   const signature = await getSignature(userId);
-  const finalHtml = composeTicketReplyHtml(message, signature);
+  const mensagemTimeline = message;
+  const mensagemEmailHtml = composeTicketReplyHtml(mensagemTimeline, signature);
+  const signatureAppended =
+    signature?.enabled === true &&
+    signature?.has_signature === true &&
+    typeof signature?.image_url === "string" &&
+    signature.image_url.length > 0;
   const powerAutomatePayload = {
     ticketId: ticket.id,
     messageId,
     destinatario: ticket.remetente_email,
     assunto: replySubject(ticket.assunto),
-    mensagem: finalHtml,
+    mensagem: mensagemEmailHtml,
     prioridade: ticket.prioridade ?? "Normal",
   };
 
@@ -83,8 +98,11 @@ export async function sendAndPersistTicketReply(
 
   if (connection.connected) {
     try {
-      const graphPayload = { messageId, message };
-      if (finalHtml !== message) graphPayload.html = finalHtml;
+      const graphPayload = {
+        messageId,
+        message: mensagemTimeline,
+        html: mensagemEmailHtml,
+      };
       await replyWithMicrosoftGraph(userId, graphPayload);
       provider = "microsoft_graph";
       senderEmail = microsoftSenderEmail(connection, helpdeskEmail);
@@ -101,6 +119,8 @@ export async function sendAndPersistTicketReply(
     senderEmail = helpdeskEmail();
   }
 
+  logSignatureDiagnostic(signature, signatureAppended, provider);
+
   let persistedMessage;
   try {
     persistedMessage = await persistMessage({
@@ -108,7 +128,7 @@ export async function sendAndPersistTicketReply(
       direcao: "Saida",
       remetente_email: senderEmail,
       destinatario_email: ticket.remetente_email,
-      corpo_mensagem: message,
+      corpo_mensagem: mensagemTimeline,
       created_by: userId,
     });
   } catch (cause) {

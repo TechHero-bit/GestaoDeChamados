@@ -77,7 +77,7 @@ test("usuário conectado usa Graph, não chama Power Automate e persiste após c
   assert.deepEqual(calls[1], [
     "graph",
     "authenticated-user",
-    { messageId: "last-message-id", message: "Resposta segura" },
+    { messageId: "last-message-id", message: "Resposta segura", html: "Resposta segura" },
   ]);
   assert.deepEqual(calls[2][1], {
     ticket_id: TICKET.id,
