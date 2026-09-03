@@ -59,7 +59,7 @@ test("fallback Power Automate recebe o mesmo HTML final com assinatura", async (
     deps,
   );
 
-  assert.match(deps.getExternalPayload().mensagem, /<div>Resposta via fallback<\/div><br><img/);
+  assert.match(deps.getExternalPayload().mensagem, /<div>Resposta via fallback<\/div><br><br><img/);
   assert.equal(deps.getPersisted().corpo_mensagem, "Resposta via fallback");
 });
 

@@ -192,7 +192,7 @@ test("HTML da assinatura é seguro, usa imagem pública no final e não altera a
     image_url: "https://project.supabase.co/signature.png?v=1",
   });
 
-  assert.match(html, /^<div>Problema &lt;corrigido&gt;<\/div><br><img/);
+  assert.match(html, /^<div>Problema &lt;corrigido&gt;<\/div><br><br><img/);
   assert.match(html, /alt="Assinatura"/);
   assert.match(html, /max-width:700px/);
   assert.equal(html.includes("base64"), false);

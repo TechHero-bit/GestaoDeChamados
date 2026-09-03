@@ -33,16 +33,17 @@ export function composeTicketReplyHtml(message, signature) {
     return safeMessage;
   }
 
-  return `<div>${safeMessage}</div><br><img src="${escapeHtmlAttribute(signature.image_url)}" alt="Assinatura" style="display:block;max-width:700px;width:auto;height:auto;">`;
+  return `<div>${safeMessage}</div><br><br><img src="${escapeHtmlAttribute(signature.image_url)}" alt="Assinatura" style="display:block;max-width:700px;height:auto;">`;
 }
 
-function logSignatureDiagnostic(signature, signatureAppended, provider) {
+function logSignatureDiagnostic(signature, signatureAppended, mensagemEmailHtml) {
+  console.log(`[SIGNATURE_DIAG] enabled=${signature?.enabled === true}`);
+  console.log(`[SIGNATURE_DIAG] pathFound=${signature?.has_signature === true}`);
   console.log(
-    `[SIGNATURE_DIAG] enabled=${signature?.enabled === true} ` +
-      `pathFound=${signature?.has_signature === true} ` +
-      `publicUrlGenerated=${typeof signature?.image_url === "string" && signature.image_url.length > 0} ` +
-      `signatureAppended=${signatureAppended} provider=${provider}`,
+    `[SIGNATURE_DIAG] publicUrlGenerated=${typeof signature?.image_url === "string" && signature.image_url.length > 0}`,
   );
+  console.log(`[SIGNATURE_DIAG] signatureAppended=${signatureAppended}`);
+  console.log(`[SIGNATURE_DIAG] graphBodyContainsImg=${/<img\b/i.test(mensagemEmailHtml)}`);
 }
 
 /**
@@ -103,6 +104,7 @@ export async function sendAndPersistTicketReply(
         message: mensagemTimeline,
         html: mensagemEmailHtml,
       };
+      logSignatureDiagnostic(signature, signatureAppended, mensagemEmailHtml);
       await replyWithMicrosoftGraph(userId, graphPayload);
       provider = "microsoft_graph";
       senderEmail = microsoftSenderEmail(connection, helpdeskEmail);
@@ -118,8 +120,6 @@ export async function sendAndPersistTicketReply(
     provider = "power_automate";
     senderEmail = helpdeskEmail();
   }
-
-  logSignatureDiagnostic(signature, signatureAppended, provider);
 
   let persistedMessage;
   try {
