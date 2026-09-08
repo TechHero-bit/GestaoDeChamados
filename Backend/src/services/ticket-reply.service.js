@@ -36,6 +36,24 @@ export function composeTicketReplyHtml(message, signature) {
   return `<div>${safeMessage}</div><br><br><img src="cid:${escapeHtmlAttribute(signature.content_id)}" alt="Assinatura" style="display:block;max-width:700px;height:auto;">`;
 }
 
+function createSignatureDebug(signature) {
+  if (signature?.enabled !== true) return { enabled: false };
+
+  return {
+    enabled: true,
+    path_found:
+      typeof signature.storage_path === "string" && signature.storage_path.trim().length > 0,
+    storage_downloaded:
+      signature.storage_downloaded === true && Buffer.isBuffer(signature.image_bytes),
+    draft_created: false,
+    body_contains_cid: false,
+    attachment_created: false,
+    attachment_inline: false,
+    content_id_matches: false,
+    draft_sent: false,
+  };
+}
+
 function logSignatureDiagnostic(signature, html, signatureAppended) {
   const pathFound = typeof signature?.storage_path === "string" && signature.storage_path.trim().length > 0;
   console.log(`[SIGNATURE_DIAG] enabled=${signature?.enabled === true}`);
@@ -78,6 +96,7 @@ export async function sendAndPersistTicketReply(
 
   const connection = await getConnectionStatus(userId);
   const signature = await getSignature(userId);
+  let signatureDebug = createSignatureDebug(signature);
   const contentId = signature?.enabled ? "smartdesk-signature" : null;
   const signatureForEmail = signature?.enabled
     ? { ...signature, content_id: contentId }
@@ -91,10 +110,19 @@ export async function sendAndPersistTicketReply(
     Buffer.isBuffer(signatureForEmail?.image_bytes);
 
   if (signatureForEmail?.enabled === true && !signatureAppended) {
+    signatureDebug.body_contains_cid = mensagemEmailHtml.includes(
+      'src="cid:smartdesk-signature"',
+    );
+    signatureDebug.content_id_matches =
+      signatureForEmail?.content_id === "smartdesk-signature" &&
+      signatureDebug.body_contains_cid;
     throw Object.assign(new Error("Não foi possível preparar a assinatura inline."), {
       statusCode: 502,
       publicCode: "SIGNATURE_ATTACHMENT_FAILED",
+      diagnosticCode: "SIGNATURE_ATTACHMENT_FAILED",
+      microsoftDiagnosticError: true,
       safeToFallback: false,
+      signatureDebug,
     });
   }
 
@@ -121,11 +149,23 @@ export async function sendAndPersistTicketReply(
       const graphPayload = signatureAppended
         ? { messageId, message: mensagemTimeline, html: mensagemEmailHtml, inlineAttachment }
         : { messageId, message: mensagemTimeline, html: mensagemEmailHtml };
-      await replyWithMicrosoftGraph(userId, graphPayload);
+      const graphResult = await replyWithMicrosoftGraph(userId, graphPayload);
+      if (signatureDebug.enabled) {
+        signatureDebug = {
+          ...signatureDebug,
+          ...(graphResult?.signatureDebug || {}),
+        };
+      }
       logSignatureDiagnostic(signatureForEmail, mensagemEmailHtml, signatureAppended);
       provider = "microsoft_graph";
       senderEmail = microsoftSenderEmail(connection, helpdeskEmail);
     } catch (error) {
+      if (signatureDebug.enabled) {
+        error.signatureDebug = {
+          ...signatureDebug,
+          ...(error.signatureDebug || {}),
+        };
+      }
       if (signatureAppended || error?.safeToFallback !== true) throw error;
 
       await replyWithPowerAutomate(powerAutomatePayload);
@@ -162,5 +202,5 @@ export async function sendAndPersistTicketReply(
     );
   }
 
-  return { message: persistedMessage, provider };
+  return { message: persistedMessage, provider, signatureDebug };
 }

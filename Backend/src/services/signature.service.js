@@ -96,12 +96,21 @@ async function getSignatureRow(userId, supabase) {
   return data;
 }
 
-function signatureLoadError(userId, cause) {
+function signatureDownloadError(
+  userId,
+  cause,
+  { pathFound = false, storageDownloaded = false } = {},
+) {
   return Object.assign(new Error("Não foi possível carregar a assinatura PNG ativa."), {
     statusCode: 502,
-    publicCode: "SIGNATURE_LOAD_FAILED",
+    publicCode: "SIGNATURE_DOWNLOAD_FAILED",
     safeToFallback: false,
     signatureError: true,
+    signatureDebug: {
+      enabled: true,
+      path_found: pathFound,
+      storage_downloaded: storageDownloaded,
+    },
     signatureLog: {
       stage: "storage.download",
       status: 502,
@@ -154,24 +163,41 @@ export async function getUserSignatureForReply(userId, { supabase = getSupabase(
     : "";
   const expectedPath = signatureStoragePath(userId);
   if (!path || path !== expectedPath) {
-    throw signatureLoadError(userId, new Error("Path da assinatura ausente ou inválido."));
+    throw signatureDownloadError(
+      userId,
+      new Error("Path da assinatura ausente ou inválido."),
+      { pathFound: Boolean(path) },
+    );
   }
 
   const { data, error } = await supabase.storage
     .from(SIGNATURE_BUCKET)
     .download(path);
 
-  if (error || !data) throw signatureLoadError(userId, error || new Error("PNG não retornado pelo Storage."));
+  if (error || !data) {
+    throw signatureDownloadError(
+      userId,
+      error || new Error("PNG não retornado pelo Storage."),
+      { pathFound: true },
+    );
+  }
 
   let imageBytes;
   try {
     imageBytes = await storageDataToBuffer(data);
   } catch (cause) {
-    throw signatureLoadError(userId, cause);
+    throw signatureDownloadError(userId, cause, {
+      pathFound: true,
+      storageDownloaded: true,
+    });
   }
 
   if (!isValidPngBytes(imageBytes)) {
-    throw signatureLoadError(userId, new Error("O objeto baixado não é um PNG válido."));
+    throw signatureDownloadError(
+      userId,
+      new Error("O objeto baixado não é um PNG válido."),
+      { pathFound: true, storageDownloaded: true },
+    );
   }
 
   return {

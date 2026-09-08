@@ -3,10 +3,20 @@ import { test } from "node:test";
 import { getUserSignatureForReply } from "../src/services/signature.service.js";
 import { replyToMicrosoftMessage } from "../src/services/microsoft-graph.service.js";
 import { sendAndPersistTicketReply } from "../src/services/ticket-reply.service.js";
+import { errorMiddleware } from "../src/middlewares/error.middleware.js";
 
 const PNG = Buffer.from("89504e470d0a1a0a", "hex");
 const USER_ID = "user-a";
 const SIGNATURE_PATH = USER_ID + "/signature.png";
+const SUCCESSFUL_GRAPH_DEBUG = {
+  enabled: true,
+  draft_created: true,
+  body_contains_cid: true,
+  attachment_created: true,
+  attachment_inline: true,
+  content_id_matches: true,
+  draft_sent: true,
+};
 
 function fakeSupabase({ enabled = true, path = SIGNATURE_PATH, download = new Blob([PNG], { type: "image/png" }) } = {}) {
   const calls = [];
@@ -43,7 +53,12 @@ function replyDependencies(signature) {
   return {
     getConnectionStatus: async () => ({ connected: true, email: "agent@example.com" }),
     getSignature: async () => signature,
-    replyWithMicrosoftGraph: async (_userId, payload) => { graphPayload = payload; },
+    replyWithMicrosoftGraph: async (_userId, payload) => {
+      graphPayload = payload;
+      return payload.inlineAttachment
+        ? { signatureDebug: SUCCESSFUL_GRAPH_DEBUG }
+        : undefined;
+    },
     persistMessage: async (payload) => { persisted = payload; return payload; },
     helpdeskEmail: () => "helpdesk@example.com",
     getGraphPayload: () => graphPayload,
@@ -63,7 +78,7 @@ test("assinatura ativa baixa PNG do bucket Assinaturas", async () => {
 test("draft Graph usa createReply, PATCH HTML, attachment inline e send em ordem", async () => {
   const calls = [];
   const contentBytes = PNG.toString("base64");
-  await replyToMicrosoftMessage(
+  const graphResult = await replyToMicrosoftMessage(
     USER_ID,
     {
       messageId: "original/message",
@@ -80,7 +95,7 @@ test("draft Graph usa createReply, PATCH HTML, attachment inline e send em ordem
         calls.push({ url, options });
         if (url.endsWith("/createReply")) {
           return new Response(JSON.stringify({ id: "draft-1" }), {
-            status: 200,
+            status: 201,
             headers: { "Content-Type": "application/json" },
           });
         }
@@ -92,6 +107,7 @@ test("draft Graph usa createReply, PATCH HTML, attachment inline e send em ordem
   );
 
   assert.equal(calls.length, 4);
+  assert.deepEqual(graphResult.signatureDebug, SUCCESSFUL_GRAPH_DEBUG);
   assert.equal(calls[0].url.endsWith("/messages/original%2Fmessage/createReply"), true);
   assert.equal(calls[1].url.endsWith("/messages/draft-1"), true);
   assert.equal(calls[2].url.endsWith("/messages/draft-1/attachments"), true);
@@ -109,6 +125,59 @@ test("draft Graph usa createReply, PATCH HTML, attachment inline e send em ordem
   assert.equal(attachment.contentId, "smartdesk-signature");
   assert.equal(attachment.contentBytes, contentBytes);
   assert.equal(calls[3].options.body, undefined);
+  assert.equal(calls.some(({ url }) => url.endsWith("/reply")), false);
+});
+
+test("falhas em createReply, PATCH ou send interrompem o fluxo inline", async () => {
+  const scenarios = [
+    { stage: "createReply", expectedCode: "SIGNATURE_DRAFT_FAILED" },
+    { stage: "patch", expectedCode: "SIGNATURE_DRAFT_FAILED" },
+    { stage: "send", expectedCode: "SIGNATURE_SEND_FAILED" },
+  ];
+
+  for (const scenario of scenarios) {
+    const calls = [];
+    await assert.rejects(
+      replyToMicrosoftMessage(
+        USER_ID,
+        {
+          messageId: "message-id",
+          message: "Mensagem original",
+          html: '<div>Resposta</div><br><br><img src="cid:smartdesk-signature">',
+          inlineAttachment: {
+            contentId: "smartdesk-signature",
+            contentBytes: PNG.toString("base64"),
+          },
+        },
+        {
+          getAccessToken: async () => "token-not-logged",
+          fetchImpl: async (url, options) => {
+            calls.push({ url, options });
+            if (url.endsWith("/createReply")) {
+              const status = scenario.stage === "createReply" ? 500 : 201;
+              return new Response(JSON.stringify({ id: "same-draft" }), { status });
+            }
+            if (options.method === "PATCH") {
+              return new Response(null, { status: scenario.stage === "patch" ? 500 : 200 });
+            }
+            if (url.endsWith("/attachments")) return new Response("{}", { status: 201 });
+            if (url.endsWith("/send")) {
+              return new Response(null, { status: scenario.stage === "send" ? 500 : 202 });
+            }
+            return new Response(null, { status: 500 });
+          },
+        },
+      ),
+      (error) => {
+        assert.equal(error.publicCode, scenario.expectedCode);
+        assert.equal(error.safeToFallback, false);
+        assert.equal(error.signatureDebug.draft_sent, false);
+        return true;
+      },
+    );
+
+    assert.equal(calls.some(({ url }) => url.endsWith("/reply")), false);
+  }
 });
 
 test("falha no attachment não chama send", async () => {
@@ -131,7 +200,7 @@ test("falha no attachment não chama send", async () => {
         fetchImpl: async (url, options) => {
           calls.push({ url, options });
           if (url.endsWith("/createReply")) {
-            return new Response(JSON.stringify({ id: "draft-2" }), { status: 200 });
+            return new Response(JSON.stringify({ id: "draft-2" }), { status: 201 });
           }
           if (url.endsWith("/attachments")) return new Response("failed", { status: 400 });
           return new Response(null, { status: 200 });
@@ -149,6 +218,44 @@ test("falha no attachment não chama send", async () => {
   assert.equal(calls.some(({ url }) => url.endsWith("/send")), false);
 });
 
+test("assinatura ativa nunca faz fallback para reply sem assinatura", async () => {
+  const signature = {
+    enabled: true,
+    has_signature: true,
+    storage_path: SIGNATURE_PATH,
+    image_bytes: PNG,
+    storage_downloaded: true,
+  };
+  const dependencies = replyDependencies(signature);
+  let fallbackCalled = false;
+  dependencies.replyWithMicrosoftGraph = async () => {
+    throw Object.assign(new Error("attachment failed"), { safeToFallback: true });
+  };
+  dependencies.replyWithPowerAutomate = async () => {
+    fallbackCalled = true;
+  };
+
+  await assert.rejects(
+    sendAndPersistTicketReply(
+      {
+        ticket: {
+          id: "ticket-no-fallback",
+          remetente_email: "requester@example.com",
+          assunto: "Teste",
+          outlook_last_message_id: "message-id",
+        },
+        userId: USER_ID,
+        message: "Resposta obrigatoriamente assinada",
+      },
+      dependencies,
+    ),
+    /attachment failed/,
+  );
+
+  assert.equal(fallbackCalled, false);
+  assert.equal(dependencies.getPersisted(), undefined);
+});
+
 test("reply com attachment inline persiste apenas a mensagem original e não expõe bytes nos logs", async () => {
   const signature = {
     enabled: true,
@@ -160,10 +267,11 @@ test("reply com attachment inline persiste apenas a mensagem original e não exp
   const deps = replyDependencies(signature);
   const originalMessage = "<script>log</script>";
   const logs = [];
+  let replyResult;
   const originalConsoleLog = console.log;
   console.log = (...args) => logs.push(args.join(" "));
   try {
-    await sendAndPersistTicketReply(
+    replyResult = await sendAndPersistTicketReply(
       {
         ticket: {
           id: "ticket-1",
@@ -180,6 +288,11 @@ test("reply com attachment inline persiste apenas a mensagem original e não exp
     console.log = originalConsoleLog;
   }
 
+  assert.deepEqual(replyResult.signatureDebug, {
+    ...SUCCESSFUL_GRAPH_DEBUG,
+    path_found: true,
+    storage_downloaded: true,
+  });
   const payload = deps.getGraphPayload();
   assert.equal(payload.html.includes('src="cid:smartdesk-signature"'), true);
   assert.equal(payload.inlineAttachment.contentId, "smartdesk-signature");
@@ -197,7 +310,7 @@ test("assinatura desativada não baixa Storage e mantém reply JSON sem imagem",
   assert.deepEqual(database.calls, []);
 
   const deps = replyDependencies(signature);
-  await sendAndPersistTicketReply(
+  const replyResult = await sendAndPersistTicketReply(
     {
       ticket: {
         id: "ticket-2",
@@ -210,11 +323,31 @@ test("assinatura desativada não baixa Storage e mantém reply JSON sem imagem",
     },
     deps,
   );
+  assert.deepEqual(replyResult.signatureDebug, { enabled: false });
   assert.equal(deps.getGraphPayload().inlineAttachment, undefined);
   assert.equal(deps.getGraphPayload().html.includes("<img"), false);
 });
 
-test("falha ao baixar assinatura ativa retorna SIGNATURE_LOAD_FAILED e não envia", async () => {
+test("sem assinatura o Graph mantém somente o reply simples", async () => {
+  const calls = [];
+  await replyToMicrosoftMessage(
+    USER_ID,
+    { messageId: "message-id", message: "Sem assinatura" },
+    {
+      getAccessToken: async () => "token-not-logged",
+      fetchImpl: async (url, options) => {
+        calls.push({ url, options });
+        return new Response(null, { status: 202 });
+      },
+    },
+  );
+
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].url.endsWith("/messages/message-id/reply"), true);
+  assert.equal(calls[0].options.method, "POST");
+});
+
+test("falha ao baixar assinatura ativa retorna SIGNATURE_DOWNLOAD_FAILED e não envia", async () => {
   const database = fakeSupabase({ download: null });
   database.storage.from = () => ({
     download: async () => ({ data: null, error: new Error("download failed") }),
@@ -223,8 +356,13 @@ test("falha ao baixar assinatura ativa retorna SIGNATURE_LOAD_FAILED e não envi
   await assert.rejects(
     getUserSignatureForReply(USER_ID, { supabase: database }),
     (error) => {
-      assert.equal(error.publicCode, "SIGNATURE_LOAD_FAILED");
+      assert.equal(error.publicCode, "SIGNATURE_DOWNLOAD_FAILED");
       assert.equal(error.safeToFallback, false);
+      assert.deepEqual(error.signatureDebug, {
+        enabled: true,
+        path_found: true,
+        storage_downloaded: false,
+      });
       return true;
     },
   );
@@ -234,6 +372,42 @@ test("usuário A não pode carregar o path de assinatura do usuário B", async (
   const database = fakeSupabase({ path: "user-b/signature.png" });
   await assert.rejects(
     getUserSignatureForReply(USER_ID, { supabase: database }),
-    (error) => error.publicCode === "SIGNATURE_LOAD_FAILED",
+    (error) => error.publicCode === "SIGNATURE_DOWNLOAD_FAILED",
   );
+});
+test("erro da pipeline retorna success=false e debug somente booleano", () => {
+  let statusCode;
+  let responseBody;
+  const response = {
+    status(status) {
+      statusCode = status;
+      return this;
+    },
+    json(body) {
+      responseBody = body;
+      return this;
+    },
+  };
+  const error = Object.assign(new Error("Falha controlada na assinatura."), {
+    statusCode: 502,
+    diagnosticCode: "SIGNATURE_ATTACHMENT_FAILED",
+    microsoftDiagnosticError: true,
+    signatureDebug: {
+      ...SUCCESSFUL_GRAPH_DEBUG,
+      attachment_created: false,
+      draft_sent: false,
+      draftId: "não-pode-vazar",
+      contentBytes: PNG.toString("base64"),
+    },
+  });
+
+  errorMiddleware(error, { originalUrl: "/api/tickets/id/reply", method: "POST" }, response);
+
+  assert.equal(statusCode, 502);
+  assert.equal(responseBody.success, false);
+  assert.equal(responseBody.code, "SIGNATURE_ATTACHMENT_FAILED");
+  assert.equal(responseBody.signature_debug.attachment_created, false);
+  assert.equal(responseBody.signature_debug.draft_sent, false);
+  assert.equal(Object.hasOwn(responseBody.signature_debug, "draftId"), false);
+  assert.equal(Object.hasOwn(responseBody.signature_debug, "contentBytes"), false);
 });

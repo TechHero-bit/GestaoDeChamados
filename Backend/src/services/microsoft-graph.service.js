@@ -143,14 +143,34 @@ function isPreSendNetworkError(error) {
     error?.name === "TimeoutError"
   );
 }
-function signatureGraphError(publicCode, message) {
+const SIGNATURE_CONTENT_ID = "smartdesk-signature";
+
+function signatureGraphError(publicCode, message, signatureDebug) {
   return Object.assign(new Error(message), {
     statusCode: 502,
     publicCode,
     safeToFallback: false,
     microsoftDiagnosticError: true,
     diagnosticCode: publicCode,
+    signatureDebug: { ...signatureDebug },
   });
+}
+
+function createInlineSignatureDebug(html, inlineAttachment) {
+  const bodyContainsCid =
+    typeof html === "string" && html.includes(`src="cid:${SIGNATURE_CONTENT_ID}"`);
+  const contentIdMatches =
+    inlineAttachment?.contentId === SIGNATURE_CONTENT_ID && bodyContainsCid;
+
+  return {
+    enabled: true,
+    draft_created: false,
+    body_contains_cid: bodyContainsCid,
+    attachment_created: false,
+    attachment_inline: true,
+    content_id_matches: contentIdMatches,
+    draft_sent: false,
+  };
 }
 
 async function readResponseJson(response) {
@@ -166,6 +186,23 @@ async function executeInlineSignatureDraft(
   { messageId, html, inlineAttachment },
   fetchImpl,
 ) {
+  const signatureDebug = createInlineSignatureDebug(html, inlineAttachment);
+  const contentBytesPresent =
+    typeof inlineAttachment?.contentBytes === "string" &&
+    inlineAttachment.contentBytes.trim().length > 0;
+
+  if (
+    !signatureDebug.body_contains_cid ||
+    !signatureDebug.content_id_matches ||
+    !contentBytesPresent
+  ) {
+    throw signatureGraphError(
+      "SIGNATURE_ATTACHMENT_FAILED",
+      "Não foi possível preparar o conteúdo da assinatura inline.",
+      signatureDebug,
+    );
+  }
+
   const messageUrl = "https://graph.microsoft.com/v1.0/me/messages/";
   let response;
   try {
@@ -178,18 +215,31 @@ async function executeInlineSignatureDraft(
       signal: AbortSignal.timeout(15000),
     });
   } catch {
-    throw signatureGraphError("SIGNATURE_DRAFT_FAILED", "Não foi possível criar o rascunho da resposta com assinatura.");
+    throw signatureGraphError(
+      "SIGNATURE_DRAFT_FAILED",
+      "Não foi possível criar o rascunho da resposta com assinatura.",
+      signatureDebug,
+    );
   }
 
-  if (response.status !== 200) {
-    throw signatureGraphError("SIGNATURE_DRAFT_FAILED", "A Microsoft não aceitou a criação do rascunho da resposta.");
+  if (response.status !== 201) {
+    throw signatureGraphError(
+      "SIGNATURE_DRAFT_FAILED",
+      "A Microsoft não aceitou a criação do rascunho da resposta.",
+      signatureDebug,
+    );
   }
 
   const draft = await readResponseJson(response);
   const draftId = typeof draft?.id === "string" && draft.id.trim() ? draft.id : null;
   if (!draftId) {
-    throw signatureGraphError("SIGNATURE_DRAFT_FAILED", "A Microsoft não retornou o identificador do rascunho.");
+    throw signatureGraphError(
+      "SIGNATURE_DRAFT_FAILED",
+      "A Microsoft não retornou o identificador do rascunho.",
+      signatureDebug,
+    );
   }
+  signatureDebug.draft_created = true;
 
   const draftUrl = messageUrl + encodeURIComponent(draftId);
   try {
@@ -208,11 +258,19 @@ async function executeInlineSignatureDraft(
       signal: AbortSignal.timeout(15000),
     });
   } catch {
-    throw signatureGraphError("SIGNATURE_DRAFT_FAILED", "Não foi possível atualizar o rascunho da resposta.");
+    throw signatureGraphError(
+      "SIGNATURE_DRAFT_FAILED",
+      "Não foi possível atualizar o rascunho da resposta.",
+      signatureDebug,
+    );
   }
 
   if (response.status !== 200) {
-    throw signatureGraphError("SIGNATURE_DRAFT_FAILED", "A Microsoft não aceitou o HTML do rascunho da resposta.");
+    throw signatureGraphError(
+      "SIGNATURE_DRAFT_FAILED",
+      "A Microsoft não aceitou o HTML do rascunho da resposta.",
+      signatureDebug,
+    );
   }
 
   try {
@@ -226,19 +284,28 @@ async function executeInlineSignatureDraft(
         "@odata.type": "#microsoft.graph.fileAttachment",
         name: "signature.png",
         contentType: "image/png",
-        contentId: inlineAttachment.contentId,
+        contentId: SIGNATURE_CONTENT_ID,
         isInline: true,
         contentBytes: inlineAttachment.contentBytes,
       }),
       signal: AbortSignal.timeout(15000),
     });
   } catch {
-    throw signatureGraphError("SIGNATURE_ATTACHMENT_FAILED", "Não foi possível adicionar a assinatura ao rascunho.");
+    throw signatureGraphError(
+      "SIGNATURE_ATTACHMENT_FAILED",
+      "Não foi possível adicionar a assinatura ao rascunho.",
+      signatureDebug,
+    );
   }
 
   if (response.status !== 201) {
-    throw signatureGraphError("SIGNATURE_ATTACHMENT_FAILED", "A Microsoft não aceitou a assinatura inline.");
+    throw signatureGraphError(
+      "SIGNATURE_ATTACHMENT_FAILED",
+      "A Microsoft não aceitou a assinatura inline.",
+      signatureDebug,
+    );
   }
+  signatureDebug.attachment_created = true;
 
   try {
     response = await fetchImpl(draftUrl + "/send", {
@@ -250,16 +317,24 @@ async function executeInlineSignatureDraft(
       signal: AbortSignal.timeout(15000),
     });
   } catch {
-    throw signatureGraphError("SIGNATURE_SEND_FAILED", "Não foi possível enviar o rascunho com assinatura.");
+    throw signatureGraphError(
+      "SIGNATURE_SEND_FAILED",
+      "Não foi possível enviar o rascunho com assinatura.",
+      signatureDebug,
+    );
   }
 
   if (response.status !== 202) {
-    throw signatureGraphError("SIGNATURE_SEND_FAILED", "A Microsoft não aceitou o envio do rascunho com assinatura.");
+    throw signatureGraphError(
+      "SIGNATURE_SEND_FAILED",
+      "A Microsoft não aceitou o envio do rascunho com assinatura.",
+      signatureDebug,
+    );
   }
+  signatureDebug.draft_sent = true;
 
-  return { draftId, status: 202 };
+  return { draftId, status: 202, signatureDebug: { ...signatureDebug } };
 }
-
 /**
  * Responde diretamente a uma mensagem existente na mailbox Microsoft conectada.
  * Este método não persiste nada no Help Desk.
