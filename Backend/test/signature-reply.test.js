@@ -19,6 +19,9 @@ function dependencies(connected) {
       assert.equal(userId, "user-a");
       return {
         enabled: true,
+        profileEnabled: true,
+        signatureServiceReceivedStringId: true,
+        signatureProfileFound: true,
         hasSignature: true,
         storagePath: `${userId}/signature.png`,
         sameAuthenticatedUser: true,
@@ -78,13 +81,26 @@ test("assinatura é consultada pelo usuário autenticado e não pode ser reutili
     return userId === "user-a"
       ? {
           enabled: true,
+          profileEnabled: true,
+          signatureServiceReceivedStringId: true,
+          signatureProfileFound: true,
           hasSignature: true,
           storagePath: `${userId}/signature.png`,
           sameAuthenticatedUser: true,
           imageBytes: Buffer.from("89504e470d0a1a0a", "hex"),
           storageDownloaded: true,
         }
-      : { enabled: false, hasSignature: false, imageBytes: null, storageDownloaded: false };
+      : {
+          enabled: false,
+          profileEnabled: false,
+          signatureServiceReceivedStringId: true,
+          signatureProfileFound: true,
+          hasSignature: false,
+          storagePath: null,
+          sameAuthenticatedUser: true,
+          imageBytes: null,
+          storageDownloaded: false,
+        };
   };
 
   await sendAndPersistTicketReply({ ticket, userId: "user-b", message: "Sem assinatura alheia" }, deps);

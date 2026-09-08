@@ -1,5 +1,8 @@
 const SIGNATURE_DEBUG_FIELDS = [
   "enabled",
+  "auth_user_id_present",
+  "signature_service_received_string_id",
+  "signature_profile_found",
   "profile_enabled",
   "reply_enabled",
   "path_found",

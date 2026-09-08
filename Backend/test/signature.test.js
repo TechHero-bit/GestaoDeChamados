@@ -234,6 +234,7 @@ test("GET profile e POST reply referenciam o mesmo service de configuração", (
   );
 
   assert.match(profileController, /getUserSignatureConfig\(req\.user\.id/);
-  assert.match(ticketController, /getSignature: getUserSignatureConfig/);
+  assert.match(ticketController, /getSignature = getUserSignatureConfig/);
+  assert.match(ticketController, /\{ getSignature \},/);
   assert.doesNotMatch(ticketController, /getUserSignatureForReply/);
 });

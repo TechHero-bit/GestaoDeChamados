@@ -147,7 +147,16 @@ export async function excluirTicket(req, res, next) {
 /**
  * POST /api/tickets/:id/reply
  */
-export async function responderTicket(req, res, next) {
+export async function responderTicket(
+  req,
+  res,
+  next,
+  {
+    findTicket = ticketService.buscarPorId,
+    sendReply = sendAndPersistTicketReply,
+    getSignature = getUserSignatureConfig,
+  } = {},
+) {
   try {
     const id = parseTicketId(req.params.id, res);
     if (!id) return;
@@ -159,7 +168,7 @@ export async function responderTicket(req, res, next) {
     }
 
     // 2. Buscar ticket
-    const ticket = await ticketService.buscarPorId(id);
+    const ticket = await findTicket(id);
     if (!ticket) {
       return res.status(404).json({
         success: false,
@@ -168,12 +177,15 @@ export async function responderTicket(req, res, next) {
     }
 
     // 3. O backend escolhe Graph ou Power Automate e só então persiste.
-    const { message, provider, signatureDebug } = await sendAndPersistTicketReply({
-      ticket,
-      userId: req.user.id,
-      message: resultado.data.mensagem,
-      getSignature: getUserSignatureConfig,
-    });
+    const authenticatedUserId = req.user.id;
+    const { message, provider, signatureDebug } = await sendReply(
+      {
+        ticket,
+        userId: authenticatedUserId,
+        message: resultado.data.mensagem,
+      },
+      { getSignature },
+    );
 
     return res.status(201).json({
       success: true,

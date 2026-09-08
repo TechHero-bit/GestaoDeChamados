@@ -21,6 +21,17 @@ function createDependencies({ connected = true, graphError, powerError } = {}) {
   return {
     calls,
     dependencies: {
+      getSignature: async (userId) => ({
+        enabled: false,
+        profileEnabled: false,
+        hasSignature: false,
+        storagePath: null,
+        imageBytes: null,
+        storageDownloaded: false,
+        signatureServiceReceivedStringId: typeof userId === "string" && userId.length > 0,
+        signatureProfileFound: true,
+        sameAuthenticatedUser: true,
+      }),
       getConnectionStatus: async (userId) => {
         calls.push(["status", userId]);
         return connected

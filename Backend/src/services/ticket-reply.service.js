@@ -2,6 +2,7 @@ import { sendTicketReply } from "./email.service.js";
 import { replyToMicrosoftMessage, safeHtmlFromText } from "./microsoft-graph.service.js";
 import { getMicrosoftConnectionStatus } from "./microsoft-oauth.service.js";
 import { adicionarMensagem, getHelpdeskEmail } from "./ticket.service.js";
+import { getUserSignatureConfig } from "./signature.service.js";
 
 export function getReplyMessageId(ticket) {
   return ticket.outlook_last_message_id || ticket.outlook_message_id;
@@ -36,15 +37,21 @@ export function composeTicketReplyHtml(message, signature) {
   return `<div>${safeMessage}</div><br><br><img src="cid:${escapeHtmlAttribute(signature.contentId)}" alt="Assinatura" style="display:block;max-width:700px;height:auto;">`;
 }
 
-function createSignatureDebug(signature) {
-  const enabled = signature?.enabled === true;
+function createSignatureDebug(signature, userId) {
+  const authUserIdPresent = typeof userId === "string" && userId.length > 0;
+  const profileEnabled = signature?.profileEnabled === true;
+  const replyEnabled = signature?.enabled === true;
   const pathFound =
     typeof signature?.storagePath === "string" && signature.storagePath.trim().length > 0;
 
   return {
-    enabled,
-    profile_enabled: enabled,
-    reply_enabled: enabled,
+    enabled: replyEnabled,
+    auth_user_id_present: authUserIdPresent,
+    signature_service_received_string_id:
+      signature?.signatureServiceReceivedStringId === true,
+    signature_profile_found: signature?.signatureProfileFound === true,
+    profile_enabled: profileEnabled,
+    reply_enabled: replyEnabled,
     path_found: pathFound,
     has_signature: signature?.hasSignature === true,
     same_authenticated_user: signature?.sameAuthenticatedUser === true,
@@ -81,13 +88,30 @@ export async function sendAndPersistTicketReply(
     replyWithPowerAutomate = sendTicketReply,
     persistMessage = adicionarMensagem,
     helpdeskEmail = getHelpdeskEmail,
-    // O controller injeta a consulta real; o fallback nulo mantém o serviço isolável em testes.
-    getSignature = async () => null,
+    getSignature = getUserSignatureConfig,
   } = {},
 ) {
-  if (!userId) {
-    throw Object.assign(new Error("Usuário autenticado não identificado."), {
-      statusCode: 401,
+  if (typeof userId !== "string" || userId.length === 0) {
+    throw Object.assign(new Error("O identificador do usuário autenticado é inválido."), {
+      statusCode: 500,
+      publicCode: "SIGNATURE_USER_ID_INVALID",
+      signatureError: true,
+      signatureDebug: {
+        enabled: false,
+        auth_user_id_present: false,
+        signature_service_received_string_id: false,
+        signature_profile_found: false,
+        profile_enabled: false,
+        path_found: false,
+        has_signature: false,
+        same_authenticated_user: false,
+        reply_enabled: false,
+      },
+      signatureLog: {
+        stage: "reply.user_id",
+        status: 500,
+        receivedType: Array.isArray(userId) ? "array" : typeof userId,
+      },
     });
   }
 
@@ -101,7 +125,7 @@ export async function sendAndPersistTicketReply(
 
   const connection = await getConnectionStatus(userId);
   const signature = await getSignature(userId, { downloadImage: true });
-  let signatureDebug = createSignatureDebug(signature);
+  let signatureDebug = createSignatureDebug(signature, userId);
   const contentId = signature?.enabled ? "smartdesk-signature" : null;
   const signatureForEmail = signature?.enabled
     ? { ...signature, contentId }

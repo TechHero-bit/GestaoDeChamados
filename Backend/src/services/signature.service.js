@@ -34,6 +34,64 @@ function databaseError(action, stage, userId, cause) {
   });
 }
 
+function signatureUserIdInvalidError(userId) {
+  const authUserIdPresent =
+    userId !== undefined &&
+    userId !== null &&
+    !(typeof userId === "string" && userId.length === 0);
+
+  return Object.assign(new Error("O identificador do usuário autenticado é inválido."), {
+    statusCode: 500,
+    publicCode: "SIGNATURE_USER_ID_INVALID",
+    signatureError: true,
+    signatureDebug: {
+      enabled: false,
+      auth_user_id_present: authUserIdPresent,
+      signature_service_received_string_id: false,
+      signature_profile_found: false,
+      profile_enabled: false,
+      path_found: false,
+      has_signature: false,
+      same_authenticated_user: false,
+      reply_enabled: false,
+    },
+    signatureLog: {
+      stage: "signature.user_id",
+      status: 500,
+      receivedType: Array.isArray(userId) ? "array" : typeof userId,
+    },
+  });
+}
+
+function signatureProfileNotFoundError(userId, data) {
+  const profileFound = data !== null && data !== undefined;
+  const pathFound =
+    typeof data?.signature_storage_path === "string" &&
+    data.signature_storage_path.trim().length > 0;
+
+  return Object.assign(new Error("O perfil do usuário autenticado não foi encontrado."), {
+    statusCode: 500,
+    publicCode: "SIGNATURE_PROFILE_NOT_FOUND",
+    signatureError: true,
+    signatureDebug: {
+      enabled: false,
+      auth_user_id_present: true,
+      signature_service_received_string_id: true,
+      signature_profile_found: profileFound,
+      profile_enabled: data?.signature_enabled === true,
+      path_found: pathFound,
+      has_signature: false,
+      same_authenticated_user: data?.id === userId,
+      reply_enabled: false,
+    },
+    signatureLog: {
+      stage: "database.signature_profile",
+      status: 500,
+      profileFound,
+    },
+  });
+}
+
 export function signatureStoragePath(userId) {
   if (typeof userId !== "string" || !userId || /[^a-zA-Z0-9-]/.test(userId)) {
     throw Object.assign(new Error("Usuário autenticado inválido."), { statusCode: 401 });
@@ -79,6 +137,10 @@ export async function getUserSignatureConfig(
     includePublicUrl = false,
   } = {},
 ) {
+  if (typeof userId !== "string" || userId.length === 0) {
+    throw signatureUserIdInvalidError(userId);
+  }
+
   const { data, error } = await supabase
     .from("users")
     .select("id, signature_enabled, signature_storage_path, data_atualizacao")
@@ -87,21 +149,7 @@ export async function getUserSignatureConfig(
 
   if (error) throw databaseError("consultar a assinatura do usuário", "database.select", userId, error);
   if (!data || data.id !== userId) {
-    const error = databaseError(
-      "localizar a configuração da assinatura do usuário autenticado",
-      "database.signature_user",
-      userId,
-      new Error("Usuário autenticado não encontrado na consulta de assinatura."),
-    );
-    error.signatureDebug = {
-      enabled: false,
-      profile_enabled: false,
-      reply_enabled: false,
-      path_found: false,
-      has_signature: false,
-      same_authenticated_user: false,
-    };
-    throw error;
+    throw signatureProfileNotFoundError(userId, data);
   }
 
   const storagePath =
@@ -110,21 +158,24 @@ export async function getUserSignatureConfig(
       : "";
   const pathFound = storagePath.length > 0;
   const hasSignature = pathFound && storagePath === signatureStoragePath(userId);
-  const enabled = data.signature_enabled === true;
+  const profileEnabled = data.signature_enabled === true;
   const config = {
-    enabled,
+    enabled: profileEnabled,
+    profileEnabled,
     hasSignature,
     storagePath: hasSignature ? storagePath : null,
     imageBytes: null,
     storageDownloaded: false,
+    signatureServiceReceivedStringId: true,
+    signatureProfileFound: true,
     sameAuthenticatedUser: data.id === userId,
     imageUrl:
-      includePublicUrl && enabled && hasSignature
+      includePublicUrl && profileEnabled && hasSignature
         ? publicUrlWithVersion(supabase, storagePath, data.data_atualizacao)
         : null,
   };
 
-  if (!downloadImage || !enabled) return config;
+  if (!downloadImage || !profileEnabled) return config;
 
   if (!hasSignature) {
     throw signatureDownloadError(
@@ -184,6 +235,9 @@ function signatureDownloadError(
     signatureError: true,
     signatureDebug: {
       enabled: true,
+      auth_user_id_present: true,
+      signature_service_received_string_id: true,
+      signature_profile_found: true,
       profile_enabled: true,
       reply_enabled: true,
       path_found: pathFound,

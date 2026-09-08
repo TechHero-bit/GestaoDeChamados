@@ -4,6 +4,7 @@ import { getUserSignatureConfig } from "../src/services/signature.service.js";
 import { replyToMicrosoftMessage } from "../src/services/microsoft-graph.service.js";
 import { sendAndPersistTicketReply } from "../src/services/ticket-reply.service.js";
 import { errorMiddleware } from "../src/middlewares/error.middleware.js";
+import { responderTicket } from "../src/controllers/ticket.controller.js";
 
 const PNG = Buffer.from("89504e470d0a1a0a", "hex");
 const USER_ID = "user-a";
@@ -110,14 +111,17 @@ test("linha de usuário ausente não é convertida em enabled=false", async () =
   await assert.rejects(
     getUserSignatureConfig(USER_ID, { supabase: database, downloadImage: true }),
     (error) => {
-      assert.match(error.message, /localizar a configuração da assinatura do usuário autenticado/);
+      assert.equal(error.publicCode, "SIGNATURE_PROFILE_NOT_FOUND");
       assert.deepEqual(error.signatureDebug, {
         enabled: false,
+        auth_user_id_present: true,
+        signature_service_received_string_id: true,
+        signature_profile_found: false,
         profile_enabled: false,
-        reply_enabled: false,
         path_found: false,
         has_signature: false,
         same_authenticated_user: false,
+        reply_enabled: false,
       });
       return true;
     },
@@ -282,6 +286,9 @@ test("falha no attachment não chama send", async () => {
 test("assinatura ativa nunca faz fallback para reply sem assinatura", async () => {
   const signature = {
     enabled: true,
+    profileEnabled: true,
+    signatureServiceReceivedStringId: true,
+    signatureProfileFound: true,
     hasSignature: true,
     storagePath: SIGNATURE_PATH,
     sameAuthenticatedUser: true,
@@ -321,6 +328,9 @@ test("assinatura ativa nunca faz fallback para reply sem assinatura", async () =
 test("reply com attachment inline persiste apenas a mensagem original e não expõe bytes nos logs", async () => {
   const signature = {
     enabled: true,
+    profileEnabled: true,
+    signatureServiceReceivedStringId: true,
+    signatureProfileFound: true,
     hasSignature: true,
     storagePath: SIGNATURE_PATH,
     sameAuthenticatedUser: true,
@@ -353,6 +363,9 @@ test("reply com attachment inline persiste apenas a mensagem original e não exp
 
   assert.deepEqual(replyResult.signatureDebug, {
     ...SUCCESSFUL_GRAPH_DEBUG,
+    auth_user_id_present: true,
+    signature_service_received_string_id: true,
+    signature_profile_found: true,
     profile_enabled: true,
     reply_enabled: true,
     path_found: true,
@@ -395,6 +408,9 @@ test("assinatura desativada não baixa Storage e mantém reply JSON sem imagem",
   );
   assert.deepEqual(replyResult.signatureDebug, {
     enabled: false,
+    auth_user_id_present: true,
+    signature_service_received_string_id: true,
+    signature_profile_found: true,
     profile_enabled: false,
     reply_enabled: false,
     path_found: true,
@@ -444,6 +460,9 @@ test("falha ao baixar assinatura ativa retorna SIGNATURE_DOWNLOAD_FAILED e não 
       assert.equal(error.safeToFallback, false);
       assert.deepEqual(error.signatureDebug, {
         enabled: true,
+        auth_user_id_present: true,
+        signature_service_received_string_id: true,
+        signature_profile_found: true,
         profile_enabled: true,
         reply_enabled: true,
         path_found: true,
@@ -533,4 +552,147 @@ test("signature_enabled=true permanece true da consulta até o payload Graph", a
   assert.equal(database.query.userId, USER_ID);
   assert.equal(dependencies.getGraphPayload().html.includes("cid:smartdesk-signature"), true);
   assert.equal(dependencies.getGraphPayload().inlineAttachment.contentBytes, PNG.toString("base64"));
+});
+test("signature service rejeita formato incorreto de userId sem consultar users", async () => {
+  for (const invalidUserId of [undefined, null, { userId: USER_ID }, []]) {
+    const database = fakeSupabase();
+
+    await assert.rejects(
+      getUserSignatureConfig(invalidUserId, {
+        supabase: database,
+        downloadImage: true,
+      }),
+      (error) => {
+        assert.equal(error.publicCode, "SIGNATURE_USER_ID_INVALID");
+        assert.equal(error.signatureDebug.signature_service_received_string_id, false);
+        return true;
+      },
+    );
+
+    assert.equal(database.query.userId, null);
+  }
+});
+
+test("controller de POST reply preserva req.user.id até a seleção do fluxo Graph", async () => {
+  const authenticatedUserId = "555cdf54-1ec4-41a2-bef4-02a1d3745b21";
+  const signaturePath = authenticatedUserId + "/signature.png";
+  const database = fakeSupabase({
+    rowUserId: authenticatedUserId,
+    path: signaturePath,
+  });
+  let loadedSignature;
+  let graphPayload;
+  let responseStatus;
+  let responseBody;
+  let nextError;
+
+  const req = {
+    params: { id: "00000000-0000-4000-8000-000000000099" },
+    body: { mensagem: "Resposta do atendente" },
+    user: { id: authenticatedUserId },
+  };
+  const res = {
+    status(status) {
+      responseStatus = status;
+      return this;
+    },
+    json(body) {
+      responseBody = body;
+      return this;
+    },
+  };
+
+  await responderTicket(
+    req,
+    res,
+    (error) => {
+      nextError = error;
+    },
+    {
+      findTicket: async (ticketId) => ({
+        id: ticketId,
+        remetente_email: "requester@example.com",
+        assunto: "Teste",
+        prioridade: "Normal",
+        outlook_last_message_id: "message-id",
+      }),
+      getSignature: getUserSignatureConfig,
+      sendReply: (input, options) => {
+        assert.equal(input.userId, authenticatedUserId);
+        assert.equal(options.getSignature, getUserSignatureConfig);
+        return sendAndPersistTicketReply(input, {
+          getConnectionStatus: async () => ({
+            connected: true,
+            email: "agent@example.com",
+          }),
+          getSignature: async (userId, signatureOptions) => {
+            loadedSignature = await options.getSignature(userId, {
+              ...signatureOptions,
+              supabase: database,
+            });
+            return loadedSignature;
+          },
+          replyWithMicrosoftGraph: async (userId, payload) => {
+            assert.equal(userId, authenticatedUserId);
+            assert.equal(loadedSignature.enabled, true);
+            assert.equal(loadedSignature.storagePath, signaturePath);
+            graphPayload = payload;
+            return { signatureDebug: SUCCESSFUL_GRAPH_DEBUG };
+          },
+          persistMessage: async (payload) => payload,
+          helpdeskEmail: () => "helpdesk@example.com",
+        });
+      },
+    },
+  );
+
+  assert.equal(nextError, undefined);
+  assert.equal(responseStatus, 201);
+  assert.equal(responseBody.success, true);
+  assert.equal(responseBody.signature_debug.auth_user_id_present, true);
+  assert.equal(responseBody.signature_debug.signature_service_received_string_id, true);
+  assert.equal(responseBody.signature_debug.signature_profile_found, true);
+  assert.equal(responseBody.signature_debug.profile_enabled, true);
+  assert.equal(responseBody.signature_debug.path_found, true);
+  assert.equal(responseBody.signature_debug.same_authenticated_user, true);
+  assert.equal(responseBody.signature_debug.reply_enabled, true);
+  assert.equal(database.query.userId, authenticatedUserId);
+  assert.equal(graphPayload.html.includes("cid:smartdesk-signature"), true);
+});
+
+test("perfil autenticado ausente interrompe o reply antes do Graph", async () => {
+  const database = fakeSupabase({ rowFound: false });
+  let graphCalled = false;
+
+  await assert.rejects(
+    sendAndPersistTicketReply(
+      {
+        ticket: {
+          id: "ticket-profile-missing",
+          remetente_email: "requester@example.com",
+          assunto: "Teste",
+          outlook_last_message_id: "message-id",
+        },
+        userId: USER_ID,
+        message: "Não enviar sem resolver o perfil",
+      },
+      {
+        getConnectionStatus: async () => ({
+          connected: true,
+          email: "agent@example.com",
+        }),
+        getSignature: (userId, options) =>
+          getUserSignatureConfig(userId, {
+            ...options,
+            supabase: database,
+          }),
+        replyWithMicrosoftGraph: async () => {
+          graphCalled = true;
+        },
+      },
+    ),
+    (error) => error.publicCode === "SIGNATURE_PROFILE_NOT_FOUND",
+  );
+
+  assert.equal(graphCalled, false);
 });
