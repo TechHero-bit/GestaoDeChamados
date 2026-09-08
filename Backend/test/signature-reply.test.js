@@ -20,6 +20,7 @@ function dependencies(connected) {
       return {
         enabled: true,
         has_signature: true,
+          storage_path: `${userId}/signature.png`,
         image_bytes: Buffer.from("89504e470d0a1a0a", "hex"),
         storage_downloaded: true,
       };
@@ -48,24 +49,23 @@ test("assinatura habilitada chega ao Graph e a timeline guarda somente a mensage
   );
 
   assert.equal(deps.getExternalPayload().message, "Problema corrigido.");
-  assert.equal(deps.getExternalPayload().html, undefined);
-  const mime = Buffer.from(deps.getExternalPayload().mime, "base64").toString("utf8");
-  assert.equal(mime.includes("multipart/related"), true);
-  assert.equal(mime.includes('src="cid:smartdesk-signature-'), true);
-  assert.equal(mime.includes("Content-Type: image/png"), true);
-  assert.equal(mime.includes('Content-Disposition: inline; filename="signature.png"'), true);
+  assert.equal(deps.getExternalPayload().html.includes('src="cid:smartdesk-signature"'), true);
+  assert.deepEqual(deps.getExternalPayload().inlineAttachment, {
+    contentId: "smartdesk-signature",
+    contentBytes: "iVBORw0KGgo=",
+  });
   assert.equal(deps.getPersisted().corpo_mensagem, "Problema corrigido.");
   assert.equal(deps.getPersisted().corpo_mensagem.includes("<img"), false);
 });
 
-test("fallback Power Automate recebe o mesmo HTML final com assinatura", async () => {
+test("fallback Power Automate recebe somente a mensagem original", async () => {
   const deps = dependencies(false);
   await sendAndPersistTicketReply(
     { ticket, userId: "user-a", message: "Resposta via fallback" },
     deps,
   );
 
-  assert.match(deps.getExternalPayload().mensagem, /<div>Resposta via fallback<\/div><br><br><img/);
+  assert.equal(deps.getExternalPayload().mensagem, "Resposta via fallback");
   assert.equal(deps.getPersisted().corpo_mensagem, "Resposta via fallback");
 });
 
@@ -78,6 +78,7 @@ test("assinatura é consultada pelo usuário autenticado e não pode ser reutili
       ? {
           enabled: true,
           has_signature: true,
+          storage_path: `${userId}/signature.png`,
           image_bytes: Buffer.from("89504e470d0a1a0a", "hex"),
           storage_downloaded: true,
         }

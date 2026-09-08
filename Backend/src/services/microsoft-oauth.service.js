@@ -393,7 +393,11 @@ export async function getValidMicrosoftAccessToken(
   let refreshed;
   try {
     refreshed = await requestToken(
-      { refresh_token: refreshToken, grant_type: "refresh_token" },
+      {
+        refresh_token: refreshToken,
+        grant_type: "refresh_token",
+        scope: MICROSOFT_SCOPES.join(" "),
+      },
       { fetchImpl, diagnosticStage: "token.refresh", userId },
     );
   } catch (cause) {

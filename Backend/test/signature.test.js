@@ -185,7 +185,7 @@ test("delete remove o arquivo esperado e limpa a configuração", async () => {
   assert.equal(database.user.signature_storage_path, null);
 });
 
-test("HTML da assinatura é seguro, usa imagem pública no final e não altera a mensagem da timeline", () => {
+test("HTML da assinatura é seguro, usa CID no final e não altera a mensagem da timeline", () => {
   const html = composeTicketReplyHtml("Problema <corrigido>", {
     enabled: true,
     has_signature: true,

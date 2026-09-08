@@ -1,10 +1,5 @@
-import { randomUUID } from "node:crypto";
 import { sendTicketReply } from "./email.service.js";
-import {
-  buildInlineMimeReply,
-  replyToMicrosoftMessage,
-  safeHtmlFromText,
-} from "./microsoft-graph.service.js";
+import { replyToMicrosoftMessage, safeHtmlFromText } from "./microsoft-graph.service.js";
 import { getMicrosoftConnectionStatus } from "./microsoft-oauth.service.js";
 import { adicionarMensagem, getHelpdeskEmail } from "./ticket.service.js";
 
@@ -41,14 +36,14 @@ export function composeTicketReplyHtml(message, signature) {
   return `<div>${safeMessage}</div><br><br><img src="cid:${escapeHtmlAttribute(signature.content_id)}" alt="Assinatura" style="display:block;max-width:700px;height:auto;">`;
 }
 
-function logSignatureCid(signature, mimeBuilt, inlineImage, graphStatus) {
-  console.log(`[SIGNATURE_CID] enabled=${signature?.enabled === true}`);
-  console.log(`[SIGNATURE_CID] storageDownload=${signature?.storage_downloaded === true}`);
-  console.log(`[SIGNATURE_CID] mimeBuilt=${mimeBuilt}`);
-  console.log(`[SIGNATURE_CID] inlineImage=${inlineImage}`);
-  if (typeof graphStatus === "number") {
-    console.log(`[SIGNATURE_CID] graphStatus=${graphStatus}`);
-  }
+function logSignatureDiagnostic(signature, html, signatureAppended) {
+  const pathFound = typeof signature?.storage_path === "string" && signature.storage_path.trim().length > 0;
+  console.log(`[SIGNATURE_DIAG] enabled=${signature?.enabled === true}`);
+  console.log(`[SIGNATURE_DIAG] pathFound=${pathFound}`);
+  console.log("[SIGNATURE_DIAG] publicUrlGenerated=false");
+  console.log(`[SIGNATURE_DIAG] signatureAppended=${signatureAppended}`);
+  console.log(`[SIGNATURE_DIAG] graphBodyContainsImg=${typeof html === "string" && /<img\b/i.test(html)}`);
+  console.log("[SIGNATURE_DIAG] provider=microsoft_graph");
 }
 
 /**
@@ -83,9 +78,7 @@ export async function sendAndPersistTicketReply(
 
   const connection = await getConnectionStatus(userId);
   const signature = await getSignature(userId);
-  const contentId = signature?.enabled
-    ? `smartdesk-signature-${randomUUID()}`
-    : null;
+  const contentId = signature?.enabled ? "smartdesk-signature" : null;
   const signatureForEmail = signature?.enabled
     ? { ...signature, content_id: contentId }
     : signature;
@@ -94,21 +87,29 @@ export async function sendAndPersistTicketReply(
   const signatureAppended =
     signatureForEmail?.enabled === true &&
     signatureForEmail?.has_signature === true &&
-    typeof signatureForEmail?.content_id === "string" &&
+    signatureForEmail?.content_id === "smartdesk-signature" &&
     Buffer.isBuffer(signatureForEmail?.image_bytes);
-  const mimeReply = signatureAppended
-    ? buildInlineMimeReply({
-        html: mensagemEmailHtml,
-        imageBytes: signatureForEmail.image_bytes,
-        contentId: signatureForEmail.content_id,
-      })
+
+  if (signatureForEmail?.enabled === true && !signatureAppended) {
+    throw Object.assign(new Error("Não foi possível preparar a assinatura inline."), {
+      statusCode: 502,
+      publicCode: "SIGNATURE_ATTACHMENT_FAILED",
+      safeToFallback: false,
+    });
+  }
+
+  const inlineAttachment = signatureAppended
+    ? {
+        contentId,
+        contentBytes: signatureForEmail.image_bytes.toString("base64"),
+      }
     : null;
   const powerAutomatePayload = {
     ticketId: ticket.id,
     messageId,
     destinatario: ticket.remetente_email,
     assunto: replySubject(ticket.assunto),
-    mensagem: mensagemEmailHtml,
+    mensagem: mensagemTimeline,
     prioridade: ticket.prioridade ?? "Normal",
   };
 
@@ -118,19 +119,14 @@ export async function sendAndPersistTicketReply(
   if (connection.connected) {
     try {
       const graphPayload = signatureAppended
-        ? { messageId, message: mensagemTimeline, mime: mimeReply }
+        ? { messageId, message: mensagemTimeline, html: mensagemEmailHtml, inlineAttachment }
         : { messageId, message: mensagemTimeline, html: mensagemEmailHtml };
-      if (signatureAppended) {
-        logSignatureCid(signatureForEmail, true, true);
-      }
       await replyWithMicrosoftGraph(userId, graphPayload);
-      if (signatureAppended) {
-        logSignatureCid(signatureForEmail, true, true, 202);
-      }
+      logSignatureDiagnostic(signatureForEmail, mensagemEmailHtml, signatureAppended);
       provider = "microsoft_graph";
       senderEmail = microsoftSenderEmail(connection, helpdeskEmail);
     } catch (error) {
-      if (error?.safeToFallback !== true) throw error;
+      if (signatureAppended || error?.safeToFallback !== true) throw error;
 
       await replyWithPowerAutomate(powerAutomatePayload);
       provider = "power_automate";

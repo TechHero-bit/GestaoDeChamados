@@ -191,7 +191,7 @@ test("callback troca tokens simulados, cifra antes de persistir e status não va
           access_token: "access-token-plain",
           refresh_token: "refresh-token-plain",
           expires_in: 3600,
-          scope: "openid profile email offline_access User.Read Mail.Send",
+          scope: "openid profile email offline_access User.Read Mail.ReadWrite Mail.Send",
         }),
         { status: 200, headers: { "Content-Type": "application/json" } },
       );
