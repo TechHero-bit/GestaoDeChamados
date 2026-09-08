@@ -482,7 +482,7 @@ test("usuário A não pode carregar o path de assinatura do usuário B", async (
     (error) => error.publicCode === "SIGNATURE_DOWNLOAD_FAILED",
   );
 });
-test("erro da pipeline retorna success=false e debug somente booleano", () => {
+test("erro da pipeline não expõe diagnóstico interno", () => {
   let statusCode;
   let responseBody;
   const response = {
@@ -513,10 +513,7 @@ test("erro da pipeline retorna success=false e debug somente booleano", () => {
   assert.equal(statusCode, 502);
   assert.equal(responseBody.success, false);
   assert.equal(responseBody.code, "SIGNATURE_ATTACHMENT_FAILED");
-  assert.equal(responseBody.signature_debug.attachment_created, false);
-  assert.equal(responseBody.signature_debug.draft_sent, false);
-  assert.equal(Object.hasOwn(responseBody.signature_debug, "draftId"), false);
-  assert.equal(Object.hasOwn(responseBody.signature_debug, "contentBytes"), false);
+  assert.equal(Object.hasOwn(responseBody, "signature_debug"), false);
 });
 
 test("signature_enabled=true permanece true da consulta até o payload Graph", async () => {
@@ -635,6 +632,11 @@ test("controller de POST reply preserva req.user.id até a seleção do fluxo Gr
           replyWithMicrosoftGraph: async (userId, payload) => {
             assert.equal(userId, authenticatedUserId);
             assert.equal(loadedSignature.enabled, true);
+            assert.equal(loadedSignature.profileEnabled, true);
+            assert.equal(loadedSignature.signatureServiceReceivedStringId, true);
+            assert.equal(loadedSignature.signatureProfileFound, true);
+            assert.equal(loadedSignature.hasSignature, true);
+            assert.equal(loadedSignature.sameAuthenticatedUser, true);
             assert.equal(loadedSignature.storagePath, signaturePath);
             graphPayload = payload;
             return { signatureDebug: SUCCESSFUL_GRAPH_DEBUG };
@@ -649,13 +651,8 @@ test("controller de POST reply preserva req.user.id até a seleção do fluxo Gr
   assert.equal(nextError, undefined);
   assert.equal(responseStatus, 201);
   assert.equal(responseBody.success, true);
-  assert.equal(responseBody.signature_debug.auth_user_id_present, true);
-  assert.equal(responseBody.signature_debug.signature_service_received_string_id, true);
-  assert.equal(responseBody.signature_debug.signature_profile_found, true);
-  assert.equal(responseBody.signature_debug.profile_enabled, true);
-  assert.equal(responseBody.signature_debug.path_found, true);
-  assert.equal(responseBody.signature_debug.same_authenticated_user, true);
-  assert.equal(responseBody.signature_debug.reply_enabled, true);
+  assert.equal(responseBody.provider, "microsoft_graph");
+  assert.equal(Object.hasOwn(responseBody, "signature_debug"), false);
   assert.equal(database.query.userId, authenticatedUserId);
   assert.equal(graphPayload.html.includes("cid:smartdesk-signature"), true);
 });

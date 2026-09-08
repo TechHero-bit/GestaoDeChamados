@@ -66,16 +66,6 @@ function createSignatureDebug(signature, userId) {
   };
 }
 
-function logSignatureDiagnostic(signature, html, signatureAppended) {
-  const pathFound = typeof signature?.storagePath === "string" && signature.storagePath.trim().length > 0;
-  console.log(`[SIGNATURE_DIAG] enabled=${signature?.enabled === true}`);
-  console.log(`[SIGNATURE_DIAG] pathFound=${pathFound}`);
-  console.log("[SIGNATURE_DIAG] publicUrlGenerated=false");
-  console.log(`[SIGNATURE_DIAG] signatureAppended=${signatureAppended}`);
-  console.log(`[SIGNATURE_DIAG] graphBodyContainsImg=${typeof html === "string" && /<img\b/i.test(html)}`);
-  console.log("[SIGNATURE_DIAG] provider=microsoft_graph");
-}
-
 /**
  * Seleciona o provedor exclusivamente a partir do usuário autenticado e só
  * registra a mensagem depois que um provedor confirma o envio.
@@ -185,7 +175,6 @@ export async function sendAndPersistTicketReply(
           ...(graphResult?.signatureDebug || {}),
         };
       }
-      logSignatureDiagnostic(signatureForEmail, mensagemEmailHtml, signatureAppended);
       provider = "microsoft_graph";
       senderEmail = microsoftSenderEmail(connection, helpdeskEmail);
     } catch (error) {

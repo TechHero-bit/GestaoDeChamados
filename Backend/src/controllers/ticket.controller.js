@@ -178,7 +178,7 @@ export async function responderTicket(
 
     // 3. O backend escolhe Graph ou Power Automate e só então persiste.
     const authenticatedUserId = req.user.id;
-    const { message, provider, signatureDebug } = await sendReply(
+    const { message, provider } = await sendReply(
       {
         ticket,
         userId: authenticatedUserId,
@@ -192,7 +192,6 @@ export async function responderTicket(
       message: "Resposta enviada com sucesso.",
       data: message,
       provider,
-      signature_debug: signatureDebug,
     });
   } catch (error) {
     next(error);
