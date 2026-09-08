@@ -1,6 +1,7 @@
 const SIGNATURE_DEBUG_FIELDS = [
   "enabled",
   "path_found",
+  "same_authenticated_user",
   "storage_downloaded",
   "draft_created",
   "body_contains_cid",

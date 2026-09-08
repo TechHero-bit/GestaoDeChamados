@@ -43,6 +43,7 @@ function createSignatureDebug(signature) {
     enabled: true,
     path_found:
       typeof signature.storage_path === "string" && signature.storage_path.trim().length > 0,
+    same_authenticated_user: signature.same_authenticated_user === true,
     storage_downloaded:
       signature.storage_downloaded === true && Buffer.isBuffer(signature.image_bytes),
     draft_created: false,

@@ -20,7 +20,8 @@ function dependencies(connected) {
       return {
         enabled: true,
         has_signature: true,
-          storage_path: `${userId}/signature.png`,
+        storage_path: `${userId}/signature.png`,
+        same_authenticated_user: true,
         image_bytes: Buffer.from("89504e470d0a1a0a", "hex"),
         storage_downloaded: true,
       };
@@ -79,6 +80,7 @@ test("assinatura é consultada pelo usuário autenticado e não pode ser reutili
           enabled: true,
           has_signature: true,
           storage_path: `${userId}/signature.png`,
+          same_authenticated_user: true,
           image_bytes: Buffer.from("89504e470d0a1a0a", "hex"),
           storage_downloaded: true,
         }

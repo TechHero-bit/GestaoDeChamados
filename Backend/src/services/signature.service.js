@@ -88,12 +88,34 @@ function formatSignature(userId, row, supabase) {
 async function getSignatureRow(userId, supabase) {
   const { data, error } = await supabase
     .from("users")
-    .select("signature_enabled, signature_storage_path")
+    .select("id, signature_enabled, signature_storage_path")
     .eq("id", userId)
     .maybeSingle();
 
   if (error) throw databaseError("consultar a assinatura do usuário", "database.select", userId, error);
-  return data;
+  if (!data || data.id !== userId) {
+    const error = databaseError(
+      "localizar a configuração da assinatura do usuário autenticado",
+      "database.signature_user",
+      userId,
+      new Error("Usuário autenticado não encontrado na consulta de assinatura."),
+    );
+    error.signatureDebug = {
+      enabled: false,
+      path_found: false,
+      same_authenticated_user: false,
+    };
+    throw error;
+  }
+
+  return {
+    id: data.id,
+    signature_enabled: data.signature_enabled === true,
+    signature_storage_path:
+      typeof data.signature_storage_path === "string"
+        ? data.signature_storage_path.trim()
+        : "",
+  };
 }
 
 function signatureDownloadError(
@@ -109,6 +131,7 @@ function signatureDownloadError(
     signatureDebug: {
       enabled: true,
       path_found: pathFound,
+      same_authenticated_user: true,
       storage_downloaded: storageDownloaded,
     },
     signatureLog: {
@@ -147,20 +170,20 @@ export async function getUserSignature(userId, { supabase = getSupabase() } = {}
 
 export async function getUserSignatureForReply(userId, { supabase = getSupabase() } = {}) {
   const row = await getSignatureRow(userId, supabase);
-  const enabled = row?.signature_enabled === true;
-  if (!enabled) {
+  const sameAuthenticatedUser = row.id === userId;
+  const signatureEnabled = row.signature_enabled === true;
+  if (!signatureEnabled) {
     return {
       enabled: false,
       has_signature: false,
       storage_path: null,
       image_bytes: null,
       storage_downloaded: false,
+      same_authenticated_user: sameAuthenticatedUser,
     };
   }
 
-  const path = typeof row?.signature_storage_path === "string"
-    ? row.signature_storage_path.trim()
-    : "";
+  const path = row.signature_storage_path;
   const expectedPath = signatureStoragePath(userId);
   if (!path || path !== expectedPath) {
     throw signatureDownloadError(
@@ -206,6 +229,7 @@ export async function getUserSignatureForReply(userId, { supabase = getSupabase(
     storage_path: path,
     image_bytes: imageBytes,
     storage_downloaded: true,
+    same_authenticated_user: sameAuthenticatedUser,
   };
 }
 
