@@ -1,6 +1,9 @@
 const SIGNATURE_DEBUG_FIELDS = [
   "enabled",
+  "profile_enabled",
+  "reply_enabled",
   "path_found",
+  "has_signature",
   "same_authenticated_user",
   "storage_downloaded",
   "draft_created",

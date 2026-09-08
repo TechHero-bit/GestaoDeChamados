@@ -71,24 +71,17 @@ function publicUrlWithVersion(supabase, path, updatedAt) {
   return url.toString();
 }
 
-function formatSignature(userId, row, supabase) {
-  const path = row?.signature_storage_path;
-  const expectedPath = signatureStoragePath(userId);
-  const pathFound = typeof path === "string" && path.trim().length > 0;
-  const hasSignature = pathFound && path === expectedPath;
-  const enabled = row?.signature_enabled === true;
-
-  return {
-    enabled,
-    has_signature: hasSignature,
-    image_url: enabled && hasSignature ? publicUrlWithVersion(supabase, path, row?.data_atualizacao) : null,
-  };
-}
-
-async function getSignatureRow(userId, supabase) {
+export async function getUserSignatureConfig(
+  userId,
+  {
+    supabase = getSupabase(),
+    downloadImage = false,
+    includePublicUrl = false,
+  } = {},
+) {
   const { data, error } = await supabase
     .from("users")
-    .select("id, signature_enabled, signature_storage_path")
+    .select("id, signature_enabled, signature_storage_path, data_atualizacao")
     .eq("id", userId)
     .maybeSingle();
 
@@ -102,26 +95,87 @@ async function getSignatureRow(userId, supabase) {
     );
     error.signatureDebug = {
       enabled: false,
+      profile_enabled: false,
+      reply_enabled: false,
       path_found: false,
+      has_signature: false,
       same_authenticated_user: false,
     };
     throw error;
   }
 
+  const storagePath =
+    typeof data.signature_storage_path === "string"
+      ? data.signature_storage_path.trim()
+      : "";
+  const pathFound = storagePath.length > 0;
+  const hasSignature = pathFound && storagePath === signatureStoragePath(userId);
+  const enabled = data.signature_enabled === true;
+  const config = {
+    enabled,
+    hasSignature,
+    storagePath: hasSignature ? storagePath : null,
+    imageBytes: null,
+    storageDownloaded: false,
+    sameAuthenticatedUser: data.id === userId,
+    imageUrl:
+      includePublicUrl && enabled && hasSignature
+        ? publicUrlWithVersion(supabase, storagePath, data.data_atualizacao)
+        : null,
+  };
+
+  if (!downloadImage || !enabled) return config;
+
+  if (!hasSignature) {
+    throw signatureDownloadError(
+      userId,
+      new Error("Path da assinatura ausente ou inválido."),
+      { pathFound },
+    );
+  }
+
+  const { data: storageData, error: storageError } = await supabase.storage
+    .from(SIGNATURE_BUCKET)
+    .download(storagePath);
+
+  if (storageError || !storageData) {
+    throw signatureDownloadError(
+      userId,
+      storageError || new Error("PNG não retornado pelo Storage."),
+      { pathFound: true, hasSignature: true },
+    );
+  }
+
+  let imageBytes;
+  try {
+    imageBytes = await storageDataToBuffer(storageData);
+  } catch (cause) {
+    throw signatureDownloadError(userId, cause, {
+      pathFound: true,
+      hasSignature: true,
+      storageDownloaded: true,
+    });
+  }
+
+  if (!isValidPngBytes(imageBytes)) {
+    throw signatureDownloadError(
+      userId,
+      new Error("O objeto baixado não é um PNG válido."),
+      { pathFound: true, hasSignature: true, storageDownloaded: true },
+    );
+  }
+
   return {
-    id: data.id,
-    signature_enabled: data.signature_enabled === true,
-    signature_storage_path:
-      typeof data.signature_storage_path === "string"
-        ? data.signature_storage_path.trim()
-        : "",
+    ...config,
+    imageBytes,
+    storageDownloaded: true,
   };
 }
 
 function signatureDownloadError(
   userId,
   cause,
-  { pathFound = false, storageDownloaded = false } = {},
+  { pathFound = false, hasSignature = false, storageDownloaded = false } = {},
 ) {
   return Object.assign(new Error("Não foi possível carregar a assinatura PNG ativa."), {
     statusCode: 502,
@@ -130,7 +184,10 @@ function signatureDownloadError(
     signatureError: true,
     signatureDebug: {
       enabled: true,
+      profile_enabled: true,
+      reply_enabled: true,
       path_found: pathFound,
+      has_signature: hasSignature,
       same_authenticated_user: true,
       storage_downloaded: storageDownloaded,
     },
@@ -158,80 +215,17 @@ function isValidPngBytes(buffer) {
 }
 
 export async function getUserSignature(userId, { supabase = getSupabase() } = {}) {
-  const { data, error } = await supabase
-    .from("users")
-    .select("signature_enabled, signature_storage_path, data_atualizacao")
-    .eq("id", userId)
-    .maybeSingle();
-
-  if (error) throw databaseError("consultar a assinatura do usuário", "database.select", userId, error);
-  return formatSignature(userId, data, supabase);
-}
-
-export async function getUserSignatureForReply(userId, { supabase = getSupabase() } = {}) {
-  const row = await getSignatureRow(userId, supabase);
-  const sameAuthenticatedUser = row.id === userId;
-  const signatureEnabled = row.signature_enabled === true;
-  if (!signatureEnabled) {
-    return {
-      enabled: false,
-      has_signature: false,
-      storage_path: null,
-      image_bytes: null,
-      storage_downloaded: false,
-      same_authenticated_user: sameAuthenticatedUser,
-    };
-  }
-
-  const path = row.signature_storage_path;
-  const expectedPath = signatureStoragePath(userId);
-  if (!path || path !== expectedPath) {
-    throw signatureDownloadError(
-      userId,
-      new Error("Path da assinatura ausente ou inválido."),
-      { pathFound: Boolean(path) },
-    );
-  }
-
-  const { data, error } = await supabase.storage
-    .from(SIGNATURE_BUCKET)
-    .download(path);
-
-  if (error || !data) {
-    throw signatureDownloadError(
-      userId,
-      error || new Error("PNG não retornado pelo Storage."),
-      { pathFound: true },
-    );
-  }
-
-  let imageBytes;
-  try {
-    imageBytes = await storageDataToBuffer(data);
-  } catch (cause) {
-    throw signatureDownloadError(userId, cause, {
-      pathFound: true,
-      storageDownloaded: true,
-    });
-  }
-
-  if (!isValidPngBytes(imageBytes)) {
-    throw signatureDownloadError(
-      userId,
-      new Error("O objeto baixado não é um PNG válido."),
-      { pathFound: true, storageDownloaded: true },
-    );
-  }
-
+  const config = await getUserSignatureConfig(userId, {
+    supabase,
+    includePublicUrl: true,
+  });
   return {
-    enabled: true,
-    has_signature: true,
-    storage_path: path,
-    image_bytes: imageBytes,
-    storage_downloaded: true,
-    same_authenticated_user: sameAuthenticatedUser,
+    enabled: config.enabled,
+    has_signature: config.hasSignature,
+    image_url: config.imageUrl,
   };
 }
+
 
 export async function uploadUserSignature(userId, file, { supabase = getSupabase() } = {}) {
   if (!isValidPngFile(file)) {

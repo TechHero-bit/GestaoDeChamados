@@ -19,11 +19,11 @@ function dependencies(connected) {
       assert.equal(userId, "user-a");
       return {
         enabled: true,
-        has_signature: true,
-        storage_path: `${userId}/signature.png`,
-        same_authenticated_user: true,
-        image_bytes: Buffer.from("89504e470d0a1a0a", "hex"),
-        storage_downloaded: true,
+        hasSignature: true,
+        storagePath: `${userId}/signature.png`,
+        sameAuthenticatedUser: true,
+        imageBytes: Buffer.from("89504e470d0a1a0a", "hex"),
+        storageDownloaded: true,
       };
     },
     replyWithMicrosoftGraph: async (_userId, payload) => {
@@ -78,13 +78,13 @@ test("assinatura é consultada pelo usuário autenticado e não pode ser reutili
     return userId === "user-a"
       ? {
           enabled: true,
-          has_signature: true,
-          storage_path: `${userId}/signature.png`,
-          same_authenticated_user: true,
-          image_bytes: Buffer.from("89504e470d0a1a0a", "hex"),
-          storage_downloaded: true,
+          hasSignature: true,
+          storagePath: `${userId}/signature.png`,
+          sameAuthenticatedUser: true,
+          imageBytes: Buffer.from("89504e470d0a1a0a", "hex"),
+          storageDownloaded: true,
         }
-      : { enabled: false, has_signature: false, image_bytes: null, storage_downloaded: false };
+      : { enabled: false, hasSignature: false, imageBytes: null, storageDownloaded: false };
   };
 
   await sendAndPersistTicketReply({ ticket, userId: "user-b", message: "Sem assinatura alheia" }, deps);

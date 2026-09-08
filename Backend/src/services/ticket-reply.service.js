@@ -29,23 +29,27 @@ function escapeHtmlAttribute(value) {
 
 export function composeTicketReplyHtml(message, signature) {
   const safeMessage = safeHtmlFromText(message);
-  if (!signature?.enabled || !signature?.has_signature || !signature?.content_id) {
+  if (!signature?.enabled || !signature?.hasSignature || !signature?.contentId) {
     return safeMessage;
   }
 
-  return `<div>${safeMessage}</div><br><br><img src="cid:${escapeHtmlAttribute(signature.content_id)}" alt="Assinatura" style="display:block;max-width:700px;height:auto;">`;
+  return `<div>${safeMessage}</div><br><br><img src="cid:${escapeHtmlAttribute(signature.contentId)}" alt="Assinatura" style="display:block;max-width:700px;height:auto;">`;
 }
 
 function createSignatureDebug(signature) {
-  if (signature?.enabled !== true) return { enabled: false };
+  const enabled = signature?.enabled === true;
+  const pathFound =
+    typeof signature?.storagePath === "string" && signature.storagePath.trim().length > 0;
 
   return {
-    enabled: true,
-    path_found:
-      typeof signature.storage_path === "string" && signature.storage_path.trim().length > 0,
-    same_authenticated_user: signature.same_authenticated_user === true,
+    enabled,
+    profile_enabled: enabled,
+    reply_enabled: enabled,
+    path_found: pathFound,
+    has_signature: signature?.hasSignature === true,
+    same_authenticated_user: signature?.sameAuthenticatedUser === true,
     storage_downloaded:
-      signature.storage_downloaded === true && Buffer.isBuffer(signature.image_bytes),
+      signature?.storageDownloaded === true && Buffer.isBuffer(signature?.imageBytes),
     draft_created: false,
     body_contains_cid: false,
     attachment_created: false,
@@ -56,7 +60,7 @@ function createSignatureDebug(signature) {
 }
 
 function logSignatureDiagnostic(signature, html, signatureAppended) {
-  const pathFound = typeof signature?.storage_path === "string" && signature.storage_path.trim().length > 0;
+  const pathFound = typeof signature?.storagePath === "string" && signature.storagePath.trim().length > 0;
   console.log(`[SIGNATURE_DIAG] enabled=${signature?.enabled === true}`);
   console.log(`[SIGNATURE_DIAG] pathFound=${pathFound}`);
   console.log("[SIGNATURE_DIAG] publicUrlGenerated=false");
@@ -96,26 +100,26 @@ export async function sendAndPersistTicketReply(
   }
 
   const connection = await getConnectionStatus(userId);
-  const signature = await getSignature(userId);
+  const signature = await getSignature(userId, { downloadImage: true });
   let signatureDebug = createSignatureDebug(signature);
   const contentId = signature?.enabled ? "smartdesk-signature" : null;
   const signatureForEmail = signature?.enabled
-    ? { ...signature, content_id: contentId }
+    ? { ...signature, contentId }
     : signature;
   const mensagemTimeline = message;
   const mensagemEmailHtml = composeTicketReplyHtml(mensagemTimeline, signatureForEmail);
   const signatureAppended =
     signatureForEmail?.enabled === true &&
-    signatureForEmail?.has_signature === true &&
-    signatureForEmail?.content_id === "smartdesk-signature" &&
-    Buffer.isBuffer(signatureForEmail?.image_bytes);
+    signatureForEmail?.hasSignature === true &&
+    signatureForEmail?.contentId === "smartdesk-signature" &&
+    Buffer.isBuffer(signatureForEmail?.imageBytes);
 
   if (signatureForEmail?.enabled === true && !signatureAppended) {
     signatureDebug.body_contains_cid = mensagemEmailHtml.includes(
       'src="cid:smartdesk-signature"',
     );
     signatureDebug.content_id_matches =
-      signatureForEmail?.content_id === "smartdesk-signature" &&
+      signatureForEmail?.contentId === "smartdesk-signature" &&
       signatureDebug.body_contains_cid;
     throw Object.assign(new Error("Não foi possível preparar a assinatura inline."), {
       statusCode: 502,
@@ -130,7 +134,7 @@ export async function sendAndPersistTicketReply(
   const inlineAttachment = signatureAppended
     ? {
         contentId,
-        contentBytes: signatureForEmail.image_bytes.toString("base64"),
+        contentBytes: signatureForEmail.imageBytes.toString("base64"),
       }
     : null;
   const powerAutomatePayload = {

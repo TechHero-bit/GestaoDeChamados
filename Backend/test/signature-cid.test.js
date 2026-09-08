@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { getUserSignatureForReply } from "../src/services/signature.service.js";
+import { getUserSignatureConfig } from "../src/services/signature.service.js";
 import { replyToMicrosoftMessage } from "../src/services/microsoft-graph.service.js";
 import { sendAndPersistTicketReply } from "../src/services/ticket-reply.service.js";
 import { errorMiddleware } from "../src/middlewares/error.middleware.js";
@@ -48,6 +48,7 @@ function fakeSupabase({
                 id: rowUserId,
                 signature_enabled: enabled,
                 signature_storage_path: path,
+                data_atualizacao: "2026-09-02T12:00:00.000Z",
               }
             : null,
           error: null,
@@ -89,30 +90,33 @@ function replyDependencies(signature) {
 
 test("assinatura ativa baixa PNG do bucket Assinaturas", async () => {
   const database = fakeSupabase();
-  const signature = await getUserSignatureForReply(USER_ID, { supabase: database });
+  const signature = await getUserSignatureConfig(USER_ID, { supabase: database, downloadImage: true });
 
-  assert.equal(database.query.columns, "id, signature_enabled, signature_storage_path");
+  assert.equal(database.query.columns, "id, signature_enabled, signature_storage_path, data_atualizacao");
   assert.equal(database.query.filterColumn, "id");
   assert.equal(database.query.userId, USER_ID);
   assert.deepEqual(database.calls, [SIGNATURE_PATH]);
   assert.equal(signature.enabled, true);
-  assert.equal(signature.has_signature, true);
-  assert.equal(signature.storage_path, SIGNATURE_PATH);
-  assert.equal(signature.storage_downloaded, true);
-  assert.equal(signature.same_authenticated_user, true);
-  assert.deepEqual(signature.image_bytes, PNG);
+  assert.equal(signature.hasSignature, true);
+  assert.equal(signature.storagePath, SIGNATURE_PATH);
+  assert.equal(signature.storageDownloaded, true);
+  assert.equal(signature.sameAuthenticatedUser, true);
+  assert.deepEqual(signature.imageBytes, PNG);
 });
 
 test("linha de usuário ausente não é convertida em enabled=false", async () => {
   const database = fakeSupabase({ rowFound: false });
 
   await assert.rejects(
-    getUserSignatureForReply(USER_ID, { supabase: database }),
+    getUserSignatureConfig(USER_ID, { supabase: database, downloadImage: true }),
     (error) => {
       assert.match(error.message, /localizar a configuração da assinatura do usuário autenticado/);
       assert.deepEqual(error.signatureDebug, {
         enabled: false,
+        profile_enabled: false,
+        reply_enabled: false,
         path_found: false,
+        has_signature: false,
         same_authenticated_user: false,
       });
       return true;
@@ -125,7 +129,7 @@ test("resultado de outro usuário é rejeitado", async () => {
   const database = fakeSupabase({ rowUserId: "user-b" });
 
   await assert.rejects(
-    getUserSignatureForReply(USER_ID, { supabase: database }),
+    getUserSignatureConfig(USER_ID, { supabase: database, downloadImage: true }),
     (error) => error.signatureDebug?.same_authenticated_user === false,
   );
   assert.equal(database.query.userId, USER_ID);
@@ -278,11 +282,11 @@ test("falha no attachment não chama send", async () => {
 test("assinatura ativa nunca faz fallback para reply sem assinatura", async () => {
   const signature = {
     enabled: true,
-    has_signature: true,
-    storage_path: SIGNATURE_PATH,
-    same_authenticated_user: true,
-    image_bytes: PNG,
-    storage_downloaded: true,
+    hasSignature: true,
+    storagePath: SIGNATURE_PATH,
+    sameAuthenticatedUser: true,
+    imageBytes: PNG,
+    storageDownloaded: true,
   };
   const dependencies = replyDependencies(signature);
   let fallbackCalled = false;
@@ -317,11 +321,11 @@ test("assinatura ativa nunca faz fallback para reply sem assinatura", async () =
 test("reply com attachment inline persiste apenas a mensagem original e não expõe bytes nos logs", async () => {
   const signature = {
     enabled: true,
-    has_signature: true,
-    storage_path: SIGNATURE_PATH,
-    same_authenticated_user: true,
-    image_bytes: PNG,
-    storage_downloaded: true,
+    hasSignature: true,
+    storagePath: SIGNATURE_PATH,
+    sameAuthenticatedUser: true,
+    imageBytes: PNG,
+    storageDownloaded: true,
   };
   const deps = replyDependencies(signature);
   const originalMessage = "<script>log</script>";
@@ -349,7 +353,10 @@ test("reply com attachment inline persiste apenas a mensagem original e não exp
 
   assert.deepEqual(replyResult.signatureDebug, {
     ...SUCCESSFUL_GRAPH_DEBUG,
+    profile_enabled: true,
+    reply_enabled: true,
     path_found: true,
+    has_signature: true,
     same_authenticated_user: true,
     storage_downloaded: true,
   });
@@ -365,10 +372,10 @@ test("reply com attachment inline persiste apenas a mensagem original e não exp
 
 test("assinatura desativada não baixa Storage e mantém reply JSON sem imagem", async () => {
   const database = fakeSupabase({ enabled: false });
-  const signature = await getUserSignatureForReply(USER_ID, { supabase: database });
+  const signature = await getUserSignatureConfig(USER_ID, { supabase: database, downloadImage: true });
   assert.equal(signature.enabled, false);
-  assert.equal(signature.same_authenticated_user, true);
-  assert.equal(signature.storage_downloaded, false);
+  assert.equal(signature.sameAuthenticatedUser, true);
+  assert.equal(signature.storageDownloaded, false);
   assert.equal(database.query.userId, USER_ID);
   assert.deepEqual(database.calls, []);
 
@@ -386,7 +393,21 @@ test("assinatura desativada não baixa Storage e mantém reply JSON sem imagem",
     },
     deps,
   );
-  assert.deepEqual(replyResult.signatureDebug, { enabled: false });
+  assert.deepEqual(replyResult.signatureDebug, {
+    enabled: false,
+    profile_enabled: false,
+    reply_enabled: false,
+    path_found: true,
+    has_signature: true,
+    same_authenticated_user: true,
+    storage_downloaded: false,
+    draft_created: false,
+    body_contains_cid: false,
+    attachment_created: false,
+    attachment_inline: false,
+    content_id_matches: false,
+    draft_sent: false,
+  });
   assert.equal(deps.getGraphPayload().inlineAttachment, undefined);
   assert.equal(deps.getGraphPayload().html.includes("<img"), false);
 });
@@ -417,13 +438,16 @@ test("falha ao baixar assinatura ativa retorna SIGNATURE_DOWNLOAD_FAILED e não 
   });
 
   await assert.rejects(
-    getUserSignatureForReply(USER_ID, { supabase: database }),
+    getUserSignatureConfig(USER_ID, { supabase: database, downloadImage: true }),
     (error) => {
       assert.equal(error.publicCode, "SIGNATURE_DOWNLOAD_FAILED");
       assert.equal(error.safeToFallback, false);
       assert.deepEqual(error.signatureDebug, {
         enabled: true,
+        profile_enabled: true,
+        reply_enabled: true,
         path_found: true,
+        has_signature: true,
         same_authenticated_user: true,
         storage_downloaded: false,
       });
@@ -435,7 +459,7 @@ test("falha ao baixar assinatura ativa retorna SIGNATURE_DOWNLOAD_FAILED e não 
 test("usuário A não pode carregar o path de assinatura do usuário B", async () => {
   const database = fakeSupabase({ path: "user-b/signature.png" });
   await assert.rejects(
-    getUserSignatureForReply(USER_ID, { supabase: database }),
+    getUserSignatureConfig(USER_ID, { supabase: database, downloadImage: true }),
     (error) => error.publicCode === "SIGNATURE_DOWNLOAD_FAILED",
   );
 });
@@ -474,4 +498,39 @@ test("erro da pipeline retorna success=false e debug somente booleano", () => {
   assert.equal(responseBody.signature_debug.draft_sent, false);
   assert.equal(Object.hasOwn(responseBody.signature_debug, "draftId"), false);
   assert.equal(Object.hasOwn(responseBody.signature_debug, "contentBytes"), false);
+});
+
+test("signature_enabled=true permanece true da consulta até o payload Graph", async () => {
+  const database = fakeSupabase({ enabled: true });
+  const dependencies = replyDependencies(null);
+  dependencies.getSignature = (authenticatedUserId, options) => {
+    assert.equal(authenticatedUserId, USER_ID);
+    assert.deepEqual(options, { downloadImage: true });
+    return getUserSignatureConfig(authenticatedUserId, {
+      ...options,
+      supabase: database,
+    });
+  };
+
+  const result = await sendAndPersistTicketReply(
+    {
+      ticket: {
+        id: "ticket-shared-config",
+        remetente_email: "requester@example.com",
+        assunto: "Teste",
+        outlook_last_message_id: "message-id",
+      },
+      userId: USER_ID,
+      message: "Configuração compartilhada",
+    },
+    dependencies,
+  );
+
+  assert.equal(result.signatureDebug.profile_enabled, true);
+  assert.equal(result.signatureDebug.reply_enabled, true);
+  assert.equal(result.signatureDebug.path_found, true);
+  assert.equal(result.signatureDebug.has_signature, true);
+  assert.equal(database.query.userId, USER_ID);
+  assert.equal(dependencies.getGraphPayload().html.includes("cid:smartdesk-signature"), true);
+  assert.equal(dependencies.getGraphPayload().inlineAttachment.contentBytes, PNG.toString("base64"));
 });

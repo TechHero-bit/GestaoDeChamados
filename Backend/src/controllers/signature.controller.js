@@ -2,7 +2,14 @@ import * as signatureService from "../services/signature.service.js";
 
 export async function getSignature(req, res, next) {
   try {
-    return res.json(await signatureService.getUserSignature(req.user.id));
+    const signature = await signatureService.getUserSignatureConfig(req.user.id, {
+      includePublicUrl: true,
+    });
+    return res.json({
+      enabled: signature.enabled,
+      has_signature: signature.hasSignature,
+      image_url: signature.imageUrl,
+    });
   } catch (error) {
     return next(error);
   }

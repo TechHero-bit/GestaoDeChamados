@@ -1,10 +1,12 @@
 import assert from "node:assert/strict";
 import { Readable } from "node:stream";
+import { readFileSync } from "node:fs";
 import { after, before, test } from "node:test";
 import app from "../src/app.js";
 import {
   deleteUserSignature,
   getUserSignature,
+  getUserSignatureConfig,
   isValidPngFile,
   SIGNATURE_BUCKET,
   signatureStoragePath,
@@ -19,6 +21,7 @@ const PNG = Buffer.from("89504e470d0a1a0a", "hex");
 class FakeSupabase {
   constructor() {
     this.user = {
+      id: USER_ID,
       signature_enabled: false,
       signature_storage_path: null,
       data_atualizacao: "2026-09-02T12:00:00.000Z",
@@ -188,8 +191,8 @@ test("delete remove o arquivo esperado e limpa a configuração", async () => {
 test("HTML da assinatura é seguro, usa CID no final e não altera a mensagem da timeline", () => {
   const html = composeTicketReplyHtml("Problema <corrigido>", {
     enabled: true,
-    has_signature: true,
-    content_id: "smartdesk-signature-test",
+    hasSignature: true,
+    contentId: "smartdesk-signature-test",
   });
 
   assert.match(html, /^<div>Problema &lt;corrigido&gt;<\/div><br><br><img/);
@@ -199,4 +202,38 @@ test("HTML da assinatura é seguro, usa CID no final e não altera a mensagem da
   assert.equal(html.includes("https://"), false);
   assert.equal(html.includes("base64"), false);
   assert.equal(composeTicketReplyHtml("Resposta", { enabled: false }), "Resposta");
+});
+
+test("perfil e reply compartilham a mesma configuração normalizada", async () => {
+  const database = new FakeSupabase();
+  database.user.signature_enabled = true;
+  database.user.signature_storage_path = USER_ID + "/signature.png";
+
+  const config = await getUserSignatureConfig(USER_ID, {
+    supabase: database,
+    includePublicUrl: true,
+  });
+  const profile = await getUserSignature(USER_ID, { supabase: database });
+
+  assert.equal(config.enabled, true);
+  assert.equal(config.hasSignature, true);
+  assert.equal(config.storagePath, USER_ID + "/signature.png");
+  assert.equal(config.sameAuthenticatedUser, true);
+  assert.equal(profile.enabled, config.enabled);
+  assert.equal(profile.has_signature, config.hasSignature);
+});
+
+test("GET profile e POST reply referenciam o mesmo service de configuração", () => {
+  const profileController = readFileSync(
+    new URL("../src/controllers/signature.controller.js", import.meta.url),
+    "utf8",
+  );
+  const ticketController = readFileSync(
+    new URL("../src/controllers/ticket.controller.js", import.meta.url),
+    "utf8",
+  );
+
+  assert.match(profileController, /getUserSignatureConfig\(req\.user\.id/);
+  assert.match(ticketController, /getSignature: getUserSignatureConfig/);
+  assert.doesNotMatch(ticketController, /getUserSignatureForReply/);
 });
