@@ -6,14 +6,21 @@ import {
   replyLimiter,
 } from "../config/rate-limit.js";
 import {
+  adicionarAnexoSimplesResposta,
   atualizarTicket,
   buscarTicket,
+  cancelarRascunhoResposta,
+  criarRascunhoResposta,
+  criarSessaoUploadResposta,
   excluirTicket,
+  finalizarRascunhoResposta,
   listarTickets,
   responderTicket,
 } from "../controllers/ticket.controller.js";
 import { authenticate } from "../middlewares/auth.middleware.js";
 import { requireRole } from "../middlewares/role.middleware.js";
+import { parseMultipartFile } from "../middlewares/multipart.middleware.js";
+import { SMALL_ATTACHMENT_LIMIT_BYTES } from "../services/reply-attachment-policy.service.js";
 
 const router = Router();
 
@@ -54,6 +61,37 @@ router.post(
   "/:id/reply",
   rateLimitMiddleware(replyLimiter, (req) => req.user?.id || getClientIp(req)),
   responderTicket,
+);
+
+router.post(
+  "/:id/reply/draft",
+  rateLimitMiddleware(replyLimiter, (req) => req.user?.id || getClientIp(req)),
+  criarRascunhoResposta,
+);
+
+router.post(
+  "/:id/reply/draft/attachments",
+  rateLimitMiddleware(generalLimiter, (req) => req.user?.id || getClientIp(req)),
+  parseMultipartFile("attachment", SMALL_ATTACHMENT_LIMIT_BYTES - 1),
+  adicionarAnexoSimplesResposta,
+);
+
+router.post(
+  "/:id/reply/draft/upload-session",
+  rateLimitMiddleware(generalLimiter, (req) => req.user?.id || getClientIp(req)),
+  criarSessaoUploadResposta,
+);
+
+router.post(
+  "/:id/reply/draft/send",
+  rateLimitMiddleware(replyLimiter, (req) => req.user?.id || getClientIp(req)),
+  finalizarRascunhoResposta,
+);
+
+router.post(
+  "/:id/reply/draft/cancel",
+  rateLimitMiddleware(generalLimiter, (req) => req.user?.id || getClientIp(req)),
+  cancelarRascunhoResposta,
 );
 
 export default router;

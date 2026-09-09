@@ -1,12 +1,14 @@
 {
   "name": "frontend",
   "version": "0.0.0",
+  "type": "module",
   "scripts": {
     "ng": "ng",
     "start": "ng serve",
     "build": "ng build",
     "vercel-build": "ng build",
-    "watch": "ng build --watch --configuration development"
+    "watch": "ng build --watch --configuration development",
+    "test:uploads": "node --experimental-strip-types --test test/*.test.ts"
   },
   "private": true,
   "packageManager": "npm@12.0.2",

@@ -4,12 +4,23 @@ import {
   sendAndPersistTicketReply,
 } from "../services/ticket-reply.service.js";
 import {
+  cancelReplyDraftSchema,
+  createReplyDraftSchema,
   listTicketsQuerySchema,
+  replyDraftActionSchema,
   replyTicketSchema,
+  sendReplyDraftSchema,
   ticketIdSchema,
   updateTicketSchema,
 } from "../schemas/ticket.schema.js";
 import { getUserSignatureConfig } from "../services/signature.service.js";
+import {
+  cancelTicketReplyDraft,
+  createTicketReplyDraft,
+  createTicketReplyUploadSession,
+  sendTicketReplyDraft,
+  uploadSmallTicketReplyAttachment,
+} from "../services/ticket-reply-draft.service.js";
 
 function validationError(res, resultado, message = "Dados inválidos.") {
   return res.status(400).json({
@@ -193,6 +204,112 @@ export async function responderTicket(
       data: message,
       provider,
     });
+  } catch (error) {
+    next(error);
+  }
+}
+
+async function requireTicket(id, res) {
+  const ticket = await ticketService.buscarPorId(id);
+  if (!ticket) {
+    res.status(404).json({ success: false, message: "Chamado não encontrado." });
+    return null;
+  }
+  return ticket;
+}
+
+export async function criarRascunhoResposta(req, res, next) {
+  try {
+    const id = parseTicketId(req.params.id, res);
+    if (!id) return;
+    const result = createReplyDraftSchema.safeParse(req.body);
+    if (!result.success) return validationError(res, result);
+    const ticket = await requireTicket(id, res);
+    if (!ticket) return;
+    const draft = await createTicketReplyDraft({
+      ticket, userId: req.user.id, message: result.data.mensagem,
+      attachments: result.data.attachments,
+    });
+    return res.status(201).json({ success: true, data: draft });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function criarSessaoUploadResposta(req, res, next) {
+  try {
+    const id = parseTicketId(req.params.id, res);
+    if (!id) return;
+    const result = replyDraftActionSchema.safeParse(req.body);
+    if (!result.success) return validationError(res, result);
+    const session = await createTicketReplyUploadSession({
+      ticketId: id, userId: req.user.id, handle: result.data.handle,
+      message: result.data.mensagem, attachments: result.data.attachments,
+      index: result.data.index,
+    });
+    return res.status(201).json({ success: true, data: session });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function adicionarAnexoSimplesResposta(req, res, next) {
+  try {
+    const id = parseTicketId(req.params.id, res);
+    if (!id) return;
+    let attachments;
+    try {
+      attachments = JSON.parse(req.multipartFields?.attachments || "null");
+    } catch {
+      attachments = null;
+    }
+    const result = replyDraftActionSchema.safeParse({
+      handle: req.multipartFields?.handle,
+      index: Number(req.multipartFields?.index),
+      mensagem: req.multipartFields?.mensagem,
+      attachments,
+    });
+    if (!result.success) return validationError(res, result);
+    const metadata = await uploadSmallTicketReplyAttachment({
+      ticketId: id, userId: req.user.id, handle: result.data.handle,
+      message: result.data.mensagem, attachments: result.data.attachments,
+      index: result.data.index, file: req.file,
+    });
+    return res.status(201).json({ success: true, data: metadata });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function finalizarRascunhoResposta(req, res, next) {
+  try {
+    const id = parseTicketId(req.params.id, res);
+    if (!id) return;
+    const result = sendReplyDraftSchema.safeParse(req.body);
+    if (!result.success) return validationError(res, result);
+    const ticket = await requireTicket(id, res);
+    if (!ticket) return;
+    const sent = await sendTicketReplyDraft({
+      ticket, userId: req.user.id, handle: result.data.handle,
+      message: result.data.mensagem, attachments: result.data.attachments,
+    });
+    return res.status(201).json({
+      success: true, message: "Resposta enviada com sucesso.", data: sent.message,
+      provider: sent.provider, attachments: sent.attachments,
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function cancelarRascunhoResposta(req, res, next) {
+  try {
+    const id = parseTicketId(req.params.id, res);
+    if (!id) return;
+    const result = cancelReplyDraftSchema.safeParse(req.body);
+    if (!result.success) return validationError(res, result);
+    await cancelTicketReplyDraft({ ticketId: id, userId: req.user.id, handle: result.data.handle });
+    return res.status(200).json({ success: true, message: "Rascunho cancelado." });
   } catch (error) {
     next(error);
   }

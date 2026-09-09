@@ -453,3 +453,212 @@ export async function replyToMicrosoftMessage(
     success: true,
   });
 }
+
+const GRAPH_MESSAGES_URL = "https://graph.microsoft.com/v1.0/me/messages/";
+
+function graphAttachmentError(status, externalCode) {
+  const limitCodes = new Set([
+    "ErrorMessageSizeExceeded", "ErrorAttachmentSizeLimitExceeded",
+    "RequestEntityTooLarge", "MessageTooBig", "MaximumAttachmentSizeExceeded",
+  ]);
+  const sizeLimited = status === 413 || limitCodes.has(externalCode);
+  return Object.assign(
+    new Error(sizeLimited
+      ? "O Outlook recusou o anexo porque o tamanho permitido pela caixa postal foi excedido."
+      : "O Microsoft Outlook não aceitou a operação com o anexo."),
+    {
+      statusCode: sizeLimited ? 422 : 502,
+      publicCode: sizeLimited ? "EXCHANGE_MESSAGE_SIZE_LIMIT" : "GRAPH_ATTACHMENT_FAILED",
+      diagnosticCode: sizeLimited ? "EXCHANGE_MESSAGE_SIZE_LIMIT" : "GRAPH_ATTACHMENT_FAILED",
+      microsoftDiagnosticError: true,
+      graphStatus: status,
+    },
+  );
+}
+
+async function acquireDraftToken(userId, getAccessToken) {
+  try {
+    return await getAccessToken(userId);
+  } catch (error) {
+    if (error?.statusCode === 404) {
+      throw Object.assign(new Error("Para enviar anexos, conecte sua conta Microsoft Outlook."), {
+        statusCode: 422, publicCode: "MICROSOFT_REQUIRED_FOR_ATTACHMENTS",
+      });
+    }
+    throw error;
+  }
+}
+
+async function ensureGraphResponse(response, acceptedStatuses) {
+  if (acceptedStatuses.includes(response.status)) return;
+  const code = await readGraphErrorCode(response);
+  throw graphAttachmentError(response.status, code);
+}
+
+async function graphDraftFetch(fetchImpl, url, options, deliveryUnknown = false) {
+  try {
+    return await fetchImpl(url, options);
+  } catch {
+    const code = deliveryUnknown ? "GRAPH_DELIVERY_UNKNOWN" : "GRAPH_NETWORK_ERROR";
+    throw Object.assign(
+      new Error(deliveryUnknown
+        ? "Não foi possível confirmar se o Microsoft Outlook enviou a resposta."
+        : "Não foi possível comunicar com o Microsoft Outlook."),
+      {
+        statusCode: 502,
+        publicCode: code,
+        diagnosticCode: code,
+        microsoftDiagnosticError: true,
+        safeToFallback: false,
+      },
+    );
+  }
+}
+
+export async function createMicrosoftReplyDraft(
+  userId,
+  { messageId, html, inlineAttachment },
+  { getAccessToken = getValidMicrosoftAccessToken, fetchImpl = globalThis.fetch } = {},
+) {
+  const accessToken = await acquireDraftToken(userId, getAccessToken);
+  const headers = { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" };
+  const createResponse = await graphDraftFetch(fetchImpl,
+    `${GRAPH_MESSAGES_URL}${encodeURIComponent(messageId)}/createReply`,
+    { method: "POST", headers, signal: AbortSignal.timeout(15000) },
+  );
+  await ensureGraphResponse(createResponse, [201]);
+  const draft = await readResponseJson(createResponse);
+  if (typeof draft.id !== "string" || !draft.id) {
+    throw graphAttachmentError(502, "MissingDraftId");
+  }
+  const draftUrl = `${GRAPH_MESSAGES_URL}${encodeURIComponent(draft.id)}`;
+
+  try {
+    const patchResponse = await graphDraftFetch(fetchImpl, draftUrl, {
+      method: "PATCH", headers,
+      body: JSON.stringify({ body: { contentType: "HTML", content: html } }),
+      signal: AbortSignal.timeout(15000),
+    });
+    await ensureGraphResponse(patchResponse, [200]);
+
+    if (inlineAttachment) {
+      const signatureResponse = await graphDraftFetch(fetchImpl, `${draftUrl}/attachments`, {
+        method: "POST", headers,
+        body: JSON.stringify({
+          "@odata.type": "#microsoft.graph.fileAttachment",
+          name: "signature.png", contentType: "image/png",
+          contentId: SIGNATURE_CONTENT_ID, isInline: true,
+          contentBytes: inlineAttachment.contentBytes,
+        }),
+        signal: AbortSignal.timeout(15000),
+      });
+      await ensureGraphResponse(signatureResponse, [201]);
+    }
+  } catch (error) {
+    try {
+      await fetchImpl(draftUrl, { method: "DELETE", headers: { Authorization: `Bearer ${accessToken}` } });
+    } catch {}
+    throw error;
+  }
+
+  return { draftId: draft.id, signatureAdded: Boolean(inlineAttachment) };
+}
+
+export async function addMicrosoftDraftFileAttachment(
+  userId,
+  { draftId, attachment },
+  { getAccessToken = getValidMicrosoftAccessToken, fetchImpl = globalThis.fetch } = {},
+) {
+  const accessToken = await acquireDraftToken(userId, getAccessToken);
+  const response = await graphDraftFetch(fetchImpl,
+    `${GRAPH_MESSAGES_URL}${encodeURIComponent(draftId)}/attachments`,
+    {
+      method: "POST",
+      headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        "@odata.type": "#microsoft.graph.fileAttachment",
+        name: attachment.name, contentType: attachment.contentType,
+        isInline: false, contentBytes: attachment.bytes.toString("base64"),
+      }),
+      signal: AbortSignal.timeout(30000),
+    },
+  );
+  await ensureGraphResponse(response, [201]);
+}
+
+export async function createMicrosoftAttachmentUploadSession(
+  userId,
+  { draftId, attachment },
+  { getAccessToken = getValidMicrosoftAccessToken, fetchImpl = globalThis.fetch } = {},
+) {
+  const accessToken = await acquireDraftToken(userId, getAccessToken);
+  const response = await graphDraftFetch(fetchImpl,
+    `${GRAPH_MESSAGES_URL}${encodeURIComponent(draftId)}/attachments/createUploadSession`,
+    {
+      method: "POST",
+      headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        AttachmentItem: {
+          attachmentType: "file", name: attachment.name, size: attachment.size, isInline: false,
+        },
+      }),
+      signal: AbortSignal.timeout(15000),
+    },
+  );
+  await ensureGraphResponse(response, [201]);
+  const session = await readResponseJson(response);
+  if (typeof session.uploadUrl !== "string" || !session.uploadUrl) {
+    throw graphAttachmentError(502, "MissingUploadUrl");
+  }
+  return {
+    uploadUrl: session.uploadUrl,
+    expirationDateTime: session.expirationDateTime,
+    nextExpectedRanges: Array.isArray(session.nextExpectedRanges) ? session.nextExpectedRanges : ["0-"],
+  };
+}
+
+export async function listMicrosoftDraftAttachments(
+  userId,
+  draftId,
+  { getAccessToken = getValidMicrosoftAccessToken, fetchImpl = globalThis.fetch } = {},
+) {
+  const accessToken = await acquireDraftToken(userId, getAccessToken);
+  let url = `${GRAPH_MESSAGES_URL}${encodeURIComponent(draftId)}/attachments?$select=id,name,size,contentType,isInline,contentId`;
+  const attachments = [];
+  for (let page = 0; url && page < 10; page += 1) {
+    const response = await graphDraftFetch(fetchImpl, url, {
+      headers: { Authorization: `Bearer ${accessToken}` }, signal: AbortSignal.timeout(15000),
+    });
+    await ensureGraphResponse(response, [200]);
+    const data = await readResponseJson(response);
+    if (Array.isArray(data.value)) attachments.push(...data.value);
+    url = typeof data["@odata.nextLink"] === "string" ? data["@odata.nextLink"] : null;
+  }
+  return attachments;
+}
+
+export async function sendMicrosoftReplyDraft(
+  userId,
+  draftId,
+  { getAccessToken = getValidMicrosoftAccessToken, fetchImpl = globalThis.fetch } = {},
+) {
+  const accessToken = await acquireDraftToken(userId, getAccessToken);
+  const response = await graphDraftFetch(fetchImpl, `${GRAPH_MESSAGES_URL}${encodeURIComponent(draftId)}/send`, {
+    method: "POST", headers: { Authorization: `Bearer ${accessToken}` },
+    signal: AbortSignal.timeout(30000),
+  }, true);
+  await ensureGraphResponse(response, [202]);
+}
+
+export async function deleteMicrosoftReplyDraft(
+  userId,
+  draftId,
+  { getAccessToken = getValidMicrosoftAccessToken, fetchImpl = globalThis.fetch } = {},
+) {
+  const accessToken = await acquireDraftToken(userId, getAccessToken);
+  const response = await graphDraftFetch(fetchImpl, `${GRAPH_MESSAGES_URL}${encodeURIComponent(draftId)}`, {
+    method: "DELETE", headers: { Authorization: `Bearer ${accessToken}` },
+    signal: AbortSignal.timeout(15000),
+  });
+  await ensureGraphResponse(response, [204, 404]);
+}

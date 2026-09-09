@@ -47,6 +47,7 @@ export function errorMiddleware(err, req, res, _next) {
 
   res.status(statusCode).json({
     success: false,
+    ...(err.publicCode ? { code: err.publicCode } : {}),
     message:
       statusCode === 500 && process.env.NODE_ENV === "production"
         ? "Erro interno do servidor."

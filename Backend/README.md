@@ -58,6 +58,11 @@ O processo pode iniciar sem credenciais para disponibilizar `/health`, mas endpo
 | PUT    | `/api/tickets/:id`       | Atualizar status                 |
 | DELETE | `/api/tickets/:id`       | Excluir ticket                   |
 | POST   | `/api/tickets/:id/reply` | Responder ao solicitante         |
+| POST   | `/api/tickets/:id/reply/draft` | Criar reply draft com manifesto de anexos |
+| POST   | `/api/tickets/:id/reply/draft/attachments` | Adicionar um anexo menor que 3 MiB |
+| POST   | `/api/tickets/:id/reply/draft/upload-session` | Criar sessão Graph para um anexo grande |
+| POST   | `/api/tickets/:id/reply/draft/send` | Validar anexos e enviar o draft |
+| POST   | `/api/tickets/:id/reply/draft/cancel` | Excluir um draft abandonado |
 
 `GET /api/tickets` aceita os parâmetros `status`, `search`, `date`, `page` e `pageSize`.
 
@@ -82,3 +87,9 @@ Configure no backend: `MICROSOFT_CLIENT_ID`, `MICROSOFT_TENANT_ID`, `MICROSOFT_C
 Rotas autenticadas: `GET /api/integrations/microsoft/connect`, `GET /api/integrations/microsoft/status` e `POST /api/integrations/microsoft/disconnect`. O callback `GET /api/integrations/microsoft/callback` é público por necessidade do OAuth, mas só aceita state válido, vinculado ao usuário e de uso único.
 
 Os tokens permanecem no backend, cifrados no Supabase, e nunca são devolvidos ao frontend. O disconnect marca `revoked_at`; a revogação da sessão Microsoft não é chamada nesta etapa, pois não há endpoint Graph necessário para isso.
+
+### Anexos em respostas
+
+O frontend envia inicialmente apenas a mensagem e o manifesto dos arquivos. Anexos menores que 3 MiB passam individualmente pelo backend; anexos de 3 a 150 MiB usam `createUploadSession` e são enviados pelo navegador diretamente à capability URL temporária do Microsoft Graph em chunks de 3.276.800 bytes. O draft só é enviado depois que o backend lista e confere todos os anexos reais no Graph.
+
+O handle do draft é assinado com a `JWT_SECRET` já existente, expira em duas horas e é vinculado ao usuário autenticado, ticket, mensagem e manifesto. Não há migration ou variável de ambiente adicional para esse fluxo. A capability URL não deve ser registrada em logs nem armazenada no navegador.

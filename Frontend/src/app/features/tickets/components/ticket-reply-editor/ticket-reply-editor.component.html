@@ -45,15 +45,23 @@
       >
         <span class="material-symbols-outlined text-xl" aria-hidden="true">link</span>
       </button>
-      <button
+      <label
         class="toolbar-button"
-        type="button"
-        disabled
-        title="Anexos dependem do fluxo do Power Automate"
-        aria-label="Anexo indisponível"
+        [class.pointer-events-none]="sending()"
+        [class.opacity-50]="sending()"
+        title="Adicionar anexos"
+        aria-label="Adicionar anexos"
       >
         <span class="material-symbols-outlined text-xl" aria-hidden="true">attach_file</span>
-      </button>
+        <input
+          class="sr-only"
+          type="file"
+          multiple
+          accept=".pdf,.png,.jpg,.jpeg,.txt,.csv,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.zip,.rtf,.odt,.ods,.odp,.json,.xml,.eml"
+          [disabled]="sending()"
+          (change)="selectFiles($event)"
+        />
+      </label>
       <span class="ml-auto hidden text-sm text-outline sm:inline">Responder via e-mail</span>
     </div>
 
@@ -65,6 +73,40 @@
       [disabled]="sending()"
       (keydown.control.enter)="send()"
     ></textarea>
+
+    @if (attachments().length > 0) {
+      <div class="space-y-2 border-t border-outline-variant/40 px-3 py-3" aria-label="Anexos selecionados">
+        @for (attachment of attachments(); track index; let index = $index) {
+          <div class="rounded-md bg-surface-container-low px-3 py-2 text-sm">
+            <div class="flex items-center gap-2">
+              <span class="material-symbols-outlined text-lg text-outline" aria-hidden="true">description</span>
+              <span class="min-w-0 flex-1 truncate font-medium" [title]="attachment.file.name">{{ attachment.file.name }}</span>
+              @if (attachment.state === 'done') {
+                <span class="text-[#2E7D32]" aria-label="Concluído">Concluído ✓</span>
+              } @else {
+                <span class="text-xs text-outline">
+                  {{ attachment.progress }}% · {{ formatBytes(attachment.uploaded) }} / {{ formatBytes(attachment.file.size) }}
+                </span>
+              }
+              <button
+                type="button"
+                class="toolbar-button"
+                [disabled]="sending()"
+                (click)="removeFile(index)"
+                aria-label="Remover anexo"
+              >
+                <span class="material-symbols-outlined text-lg" aria-hidden="true">close</span>
+              </button>
+            </div>
+            @if (attachment.state === 'uploading' || attachment.state === 'error') {
+              <div class="mt-2 h-1.5 overflow-hidden rounded-full bg-outline-variant" role="progressbar" [attr.aria-valuenow]="attachment.progress" aria-valuemin="0" aria-valuemax="100">
+                <div class="h-full rounded-full transition-all" [class.bg-error]="attachment.state === 'error'" [class.bg-primary]="attachment.state !== 'error'" [style.width.%]="attachment.progress"></div>
+              </div>
+            }
+          </div>
+        }
+      </div>
+    }
 
     @if (error()) {
       <p class="mx-3 mb-2 flex items-center gap-1 text-sm text-error" role="alert">
@@ -92,6 +134,9 @@
         Usar resposta rápida
       </button>
       <div class="flex items-center justify-end gap-2">
+        @if (uploadInProgress()) {
+          <button class="secondary-button" type="button" (click)="cancel()">Cancelar</button>
+        }
         <button
           class="secondary-button hidden sm:inline-flex"
           type="button"
@@ -110,7 +155,7 @@
             <span class="material-symbols-outlined animate-spin text-lg" aria-hidden="true"
               >progress_activity</span
             >
-            Enviando
+            {{ attachments().length > 0 ? 'Enviando anexos...' : 'Enviando' }}
           } @else {
             <span class="material-symbols-outlined text-lg" aria-hidden="true">send</span>
             Enviar

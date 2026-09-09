@@ -68,3 +68,39 @@ export const replyTicketSchema = z
       .max(10000, "A mensagem excede o tamanho máximo."),
   })
   .strict();
+
+const replyAttachmentSchema = z
+  .object({
+    name: z.string().trim().min(1).max(255),
+    size: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+    contentType: z.string().trim().min(1).max(200),
+  })
+  .strict();
+
+export const createReplyDraftSchema = z
+  .object({
+    mensagem: z.string().trim().min(1).max(10000),
+    attachments: z.array(replyAttachmentSchema).min(1).max(20),
+  })
+  .strict();
+
+export const replyDraftActionSchema = z
+  .object({
+    handle: z.string().min(100).max(4096),
+    index: z.number().int().min(0).max(19),
+    mensagem: z.string().trim().min(1).max(10000),
+    attachments: z.array(replyAttachmentSchema).min(1).max(20),
+  })
+  .strict();
+
+export const sendReplyDraftSchema = z
+  .object({
+    handle: z.string().min(100).max(4096),
+    mensagem: z.string().trim().min(1).max(10000),
+    attachments: z.array(replyAttachmentSchema).min(1).max(20),
+  })
+  .strict();
+
+export const cancelReplyDraftSchema = z
+  .object({ handle: z.string().min(100).max(4096) })
+  .strict();
