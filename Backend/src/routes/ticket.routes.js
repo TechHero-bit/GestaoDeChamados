@@ -20,7 +20,10 @@ import {
 import { authenticate } from "../middlewares/auth.middleware.js";
 import { requireRole } from "../middlewares/role.middleware.js";
 import { parseMultipartFile } from "../middlewares/multipart.middleware.js";
-import { SMALL_ATTACHMENT_LIMIT_BYTES } from "../services/reply-attachment-policy.service.js";
+import {
+  REPLY_ATTACHMENT_FILE_FIELD,
+  SMALL_ATTACHMENT_LIMIT_BYTES,
+} from "../services/reply-attachment-policy.service.js";
 
 const router = Router();
 
@@ -72,7 +75,7 @@ router.post(
 router.post(
   "/:id/reply/draft/attachments",
   rateLimitMiddleware(generalLimiter, (req) => req.user?.id || getClientIp(req)),
-  parseMultipartFile("attachment", SMALL_ATTACHMENT_LIMIT_BYTES - 1),
+  parseMultipartFile(REPLY_ATTACHMENT_FILE_FIELD, SMALL_ATTACHMENT_LIMIT_BYTES - 1),
   adicionarAnexoSimplesResposta,
 );
 

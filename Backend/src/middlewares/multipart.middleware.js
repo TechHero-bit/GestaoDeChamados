@@ -18,21 +18,26 @@ export function parseMultipartFile(expectedField, maxFileBytes) {
     });
   }
 
-  const boundary = boundaryMatch[1] || boundaryMatch[2];
+  const boundary = (boundaryMatch[1] || boundaryMatch[2]).trim();
   const delimiter = Buffer.from(`--${boundary}`);
   const chunks = [];
   let receivedBytes = 0;
+  let rejected = false;
   const maxRequestBytes = maxFileBytes + 64 * 1024;
 
   req.on("data", (chunk) => {
+    if (rejected) return;
     receivedBytes += chunk.length;
     if (receivedBytes > maxRequestBytes) {
-      return req.destroy(Object.assign(new Error("O arquivo excede o limite permitido."), { statusCode: 413 }));
+      rejected = true;
+      chunks.length = 0;
+      return res.status(413).json({ success: false, message: "O arquivo excede o limite permitido." });
     }
     chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
   });
-  req.on("error", next);
+  req.on("error", (error) => { if (!rejected) next(error); });
   req.on("end", () => {
+    if (rejected) return;
     try {
       const body = Buffer.concat(chunks);
       const file = findMultipartFile(body, delimiter, expectedField);
@@ -52,7 +57,7 @@ export function parseMultipartFile(expectedField, maxFileBytes) {
       return next();
     } catch (error) {
       return next(
-        Object.assign(new Error("Não foi possível ler o upload da assinatura."), {
+        Object.assign(new Error("Não foi possível ler o upload multipart."), {
           statusCode: 400,
           cause: error,
         }),
@@ -82,7 +87,7 @@ function findMultipartFields(body, delimiter) {
     let valueEnd = nextPart;
     if (body[valueEnd - 2] === 13 && body[valueEnd - 1] === 10) valueEnd -= 2;
     if (name && filename === undefined) fields[name] = body.toString("utf8", headersEnd + 4, valueEnd);
-    cursor = nextPart + delimiter.length;
+    cursor = nextPart;
   }
   return fields;
 }
@@ -124,7 +129,7 @@ function findMultipartFile(body, delimiter, expectedField) {
       };
     }
 
-    cursor = nextPart + delimiter.length;
+    cursor = nextPart;
   }
 
   return null;

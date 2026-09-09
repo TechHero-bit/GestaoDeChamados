@@ -75,17 +75,31 @@
     ></textarea>
 
     @if (attachments().length > 0) {
-      <div class="space-y-2 border-t border-outline-variant/40 px-3 py-3" aria-label="Anexos selecionados">
+      <div
+        class="space-y-2 border-t border-outline-variant/40 px-3 py-3"
+        aria-label="Anexos selecionados"
+      >
         @for (attachment of attachments(); track index; let index = $index) {
           <div class="rounded-md bg-surface-container-low px-3 py-2 text-sm">
             <div class="flex items-center gap-2">
-              <span class="material-symbols-outlined text-lg text-outline" aria-hidden="true">description</span>
-              <span class="min-w-0 flex-1 truncate font-medium" [title]="attachment.file.name">{{ attachment.file.name }}</span>
+              <span class="material-symbols-outlined text-lg text-outline" aria-hidden="true"
+                >description</span
+              >
+              <span class="min-w-0 flex-1 truncate font-medium" [title]="attachment.file.name">{{
+                attachment.file.name
+              }}</span>
               @if (attachment.state === 'done') {
                 <span class="text-[#2E7D32]" aria-label="Concluído">Concluído ✓</span>
+              } @else if (attachment.state === 'cancelled') {
+                <span class="text-outline">Cancelado</span>
+              } @else if (attachment.state === 'error') {
+                <span class="text-error">Erro</span>
+              } @else if (attachment.state === 'uploading' && attachment.uploaded === 0) {
+                <span class="text-xs text-outline">Enviando...</span>
               } @else {
                 <span class="text-xs text-outline">
-                  {{ attachment.progress }}% · {{ formatBytes(attachment.uploaded) }} / {{ formatBytes(attachment.file.size) }}
+                  {{ attachment.progress }}% · {{ formatBytes(attachment.uploaded) }} /
+                  {{ formatBytes(attachment.file.size) }}
                 </span>
               }
               <button
@@ -99,8 +113,26 @@
               </button>
             </div>
             @if (attachment.state === 'uploading' || attachment.state === 'error') {
-              <div class="mt-2 h-1.5 overflow-hidden rounded-full bg-outline-variant" role="progressbar" [attr.aria-valuenow]="attachment.progress" aria-valuemin="0" aria-valuemax="100">
-                <div class="h-full rounded-full transition-all" [class.bg-error]="attachment.state === 'error'" [class.bg-primary]="attachment.state !== 'error'" [style.width.%]="attachment.progress"></div>
+              <div
+                class="mt-2 h-1.5 overflow-hidden rounded-full bg-outline-variant"
+                role="progressbar"
+                [attr.aria-valuenow]="attachment.uploaded > 0 ? attachment.progress : null"
+                aria-valuemin="0"
+                aria-valuemax="100"
+              >
+                <div
+                  class="h-full rounded-full transition-all"
+                  [class.animate-pulse]="
+                    attachment.state === 'uploading' && attachment.uploaded === 0
+                  "
+                  [class.bg-error]="attachment.state === 'error'"
+                  [class.bg-primary]="attachment.state !== 'error'"
+                  [style.width.%]="
+                    attachment.state === 'uploading' && attachment.uploaded === 0
+                      ? 100
+                      : attachment.progress
+                  "
+                ></div>
               </div>
             }
           </div>

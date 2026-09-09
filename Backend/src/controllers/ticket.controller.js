@@ -253,7 +253,12 @@ export async function criarSessaoUploadResposta(req, res, next) {
   }
 }
 
-export async function adicionarAnexoSimplesResposta(req, res, next) {
+export async function adicionarAnexoSimplesResposta(
+  req,
+  res,
+  next,
+  { uploadAttachment = uploadSmallTicketReplyAttachment } = {},
+) {
   try {
     const id = parseTicketId(req.params.id, res);
     if (!id) return;
@@ -270,7 +275,7 @@ export async function adicionarAnexoSimplesResposta(req, res, next) {
       attachments,
     });
     if (!result.success) return validationError(res, result);
-    const metadata = await uploadSmallTicketReplyAttachment({
+    const metadata = await uploadAttachment({
       ticketId: id, userId: req.user.id, handle: result.data.handle,
       message: result.data.mensagem, attachments: result.data.attachments,
       index: result.data.index, file: req.file,

@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
+import { Readable } from "node:stream";
 import { after, before, test } from "node:test";
+import { adicionarAnexoSimplesResposta } from "../src/controllers/ticket.controller.js";
+import ticketRoutes from "../src/routes/ticket.routes.js";
 import {
   MAX_ATTACHMENT_SIZE_BYTES,
+  REPLY_ATTACHMENT_FILE_FIELD,
   SMALL_ATTACHMENT_LIMIT_BYTES,
   normalizeReplyAttachment,
 } from "../src/services/reply-attachment-policy.service.js";
@@ -65,11 +69,71 @@ test("attachment simples vira um único fileAttachment não inline", async () =>
   assert.equal(body.contentBytes, Buffer.from("pdf").toString("base64"));
 });
 
-test("arquivo grande cria upload session oficial sem enviar os bytes", async () => {
+test("rota real de attachment recebe multipart PNG de 100 KB no campo attachment", async () => {
+  const authLayerIndex = ticketRoutes.stack.findIndex((layer) => layer.name === "authenticate");
+  const routeLayerIndex = ticketRoutes.stack.findIndex(
+    (layer) => layer.route?.path === "/:id/reply/draft/attachments",
+  );
+  assert.ok(authLayerIndex >= 0 && authLayerIndex < routeLayerIndex, "a autenticação deve preceder a rota");
+
+  const routeLayer = ticketRoutes.stack[routeLayerIndex];
+  assert.equal(routeLayer.route.methods.post, true);
+  const multipartLayer = routeLayer.route.stack.find((layer) => layer.name === "multipartParser");
+  assert.ok(multipartLayer, "a rota deve registrar o middleware multipart");
+
+  const bytes = new Uint8Array(100 * 1024).fill(7);
+  const manifest = [{ name: "print.png", size: bytes.length, contentType: "image/png" }];
+  const form = new FormData();
+  form.append("handle", "h".repeat(120));
+  form.append("index", "0");
+  form.append("mensagem", "Resposta com anexo");
+  form.append("attachments", JSON.stringify(manifest));
+  form.append(REPLY_ATTACHMENT_FILE_FIELD, new Blob([bytes], { type: "image/png" }), "print.png");
+  const browserRequest = new Request("http://localhost/upload", { method: "POST", body: form });
+  const req = Readable.from([Buffer.from(await browserRequest.arrayBuffer())]);
+  req.headers = { "content-type": browserRequest.headers.get("content-type") };
+  req.params = { id: ticket.id };
+  req.user = { id: "user-a" };
+
+  let parserResponse;
+  const parserRes = {
+    status(status) { parserResponse = { status }; return this; },
+    json(body) { parserResponse.body = body; return this; },
+  };
+  await new Promise((resolve, reject) => {
+    multipartLayer.handle(req, parserRes, (error) => error ? reject(error) : resolve());
+  });
+  assert.equal(parserResponse, undefined);
+  assert.equal(req.file.fieldname, REPLY_ATTACHMENT_FILE_FIELD);
+  assert.equal(req.file.originalname, "print.png");
+  assert.equal(req.file.mimetype, "image/png");
+  assert.equal(req.file.size, 100 * 1024);
+  assert.equal(req.file.buffer.length, 100 * 1024);
+
+  let uploadInput;
+  let controllerResponse;
+  const controllerRes = {
+    status(status) { controllerResponse = { status }; return this; },
+    json(body) { controllerResponse.body = body; return this; },
+  };
+  await adicionarAnexoSimplesResposta(req, controllerRes, assert.fail, {
+    uploadAttachment: async (input) => {
+      uploadInput = input;
+      return { name: input.file.originalname, size: input.file.size, content_type: input.file.mimetype };
+    },
+  });
+  assert.equal(controllerResponse.status, 201);
+  assert.equal(controllerResponse.body.success, true);
+  assert.equal(uploadInput.index, 0);
+  assert.deepEqual(uploadInput.attachments, manifest);
+});
+
+test("arquivo de 5 MB cria upload session oficial sem enviar os bytes", async () => {
   let request;
+  const fileSize = 5 * 1024 * 1024;
   const session = await createMicrosoftAttachmentUploadSession(
     "user-a",
-    { draftId: "draft-1", attachment: { name: "large.zip", size: 10 * 1024 * 1024 } },
+    { draftId: "draft-1", attachment: { name: "large.zip", size: fileSize } },
     {
       getAccessToken: async () => "secret-token",
       fetchImpl: async (url, options) => {
@@ -84,7 +148,7 @@ test("arquivo grande cria upload session oficial sem enviar os bytes", async () 
   );
   assert.equal(request.url.endsWith("/attachments/createUploadSession"), true);
   assert.deepEqual(JSON.parse(request.options.body), {
-    AttachmentItem: { attachmentType: "file", name: "large.zip", size: 10 * 1024 * 1024, isInline: false },
+    AttachmentItem: { attachmentType: "file", name: "large.zip", size: fileSize, isInline: false },
   });
   assert.equal(request.options.body.includes("contentBytes"), false);
   assert.equal(session.uploadUrl, "https://upload.example/capability-secret");

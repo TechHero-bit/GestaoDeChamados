@@ -8,14 +8,50 @@ import {
   ReplyAttachmentProgress,
   ReplyAttachmentUploadService,
 } from '../../../../core/services/reply-attachment-upload.service';
+import {
+  markUnfinishedAttachments,
+  updateAttachmentProgress,
+} from '../../../../core/utils/reply-attachment-state';
 
 const ALLOWED_EXTENSIONS = new Set([
-  'pdf', 'png', 'jpg', 'jpeg', 'txt', 'csv', 'doc', 'docx', 'xls', 'xlsx',
-  'ppt', 'pptx', 'zip', 'rtf', 'odt', 'ods', 'odp', 'json', 'xml', 'eml',
+  'pdf',
+  'png',
+  'jpg',
+  'jpeg',
+  'txt',
+  'csv',
+  'doc',
+  'docx',
+  'xls',
+  'xlsx',
+  'ppt',
+  'pptx',
+  'zip',
+  'rtf',
+  'odt',
+  'ods',
+  'odp',
+  'json',
+  'xml',
+  'eml',
 ]);
 const BLOCKED_EXTENSIONS = new Set([
-  'exe', 'bat', 'cmd', 'ps1', 'vbs', 'scr', 'com', 'msi', 'js', 'jse',
-  'wsf', 'wsh', 'hta', 'cpl', 'reg', 'lnk',
+  'exe',
+  'bat',
+  'cmd',
+  'ps1',
+  'vbs',
+  'scr',
+  'com',
+  'msi',
+  'js',
+  'jse',
+  'wsf',
+  'wsh',
+  'hta',
+  'cpl',
+  'reg',
+  'lnk',
 ]);
 
 @Component({
@@ -36,8 +72,10 @@ export class TicketReplyEditorComponent implements OnDestroy {
   readonly error = signal('');
   readonly sentNotice = signal(false);
   readonly attachments = signal<ReplyAttachmentProgress[]>([]);
-  readonly uploadInProgress = computed(() =>
-    this.sending() && this.attachments().some((item) => item.state === 'pending' || item.state === 'uploading'),
+  readonly uploadInProgress = computed(
+    () =>
+      this.sending() &&
+      this.attachments().some((item) => item.state === 'pending' || item.state === 'uploading'),
   );
 
   message = '';
@@ -76,6 +114,10 @@ export class TicketReplyEditorComponent implements OnDestroy {
       return;
     }
     for (const file of files) {
+      if (file.size <= 0) {
+        this.error.set('Não é possível enviar um arquivo vazio.');
+        return;
+      }
       if (file.size > MAX_REPLY_ATTACHMENT_SIZE) {
         this.error.set('Este arquivo excede o limite máximo suportado pelo Outlook.');
         return;
@@ -121,11 +163,9 @@ export class TicketReplyEditorComponent implements OnDestroy {
         selected.map(({ file }) => file),
         this.uploadAbort.signal,
         (index, uploaded, state) => {
-          this.attachments.update((items) => items.map((item, currentIndex) =>
-            currentIndex === index
-              ? { ...item, uploaded, progress: Math.min(100, Math.round((uploaded / item.file.size) * 100)), state }
-              : item,
-          ));
+          this.attachments.update((items) =>
+            updateAttachmentProgress(items, index, uploaded, state),
+          );
         },
       );
       this.message = '';
@@ -133,9 +173,8 @@ export class TicketReplyEditorComponent implements OnDestroy {
       this.sentNotice.set(true);
       this.messageSent.emit(createdMessage);
     } catch (error) {
-      this.attachments.update((items) => items.map((item) =>
-        item.state === 'uploading' ? { ...item, state: 'error' } : item,
-      ));
+      const cancelled = this.uploadAbort?.signal.aborted === true;
+      this.attachments.update((items) => markUnfinishedAttachments(items, cancelled));
       this.error.set(error instanceof Error ? error.message : 'Não foi possível enviar os anexos.');
     } finally {
       this.uploadAbort = undefined;

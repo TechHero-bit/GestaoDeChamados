@@ -2,6 +2,7 @@ import path from "node:path";
 
 export const SMALL_ATTACHMENT_LIMIT_BYTES = 3 * 1024 * 1024;
 export const MAX_ATTACHMENT_SIZE_BYTES = 150 * 1024 * 1024;
+export const REPLY_ATTACHMENT_FILE_FIELD = "attachment";
 
 const MIME_BY_EXTENSION = new Map(Object.entries({
   ".pdf": "application/pdf", ".png": "image/png", ".jpg": "image/jpeg",

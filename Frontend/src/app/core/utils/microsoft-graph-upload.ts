@@ -1,5 +1,31 @@
 export const GRAPH_CHUNK_SIZE = 10 * 320 * 1024;
+export const SMALL_ATTACHMENT_FORM_FILE_FIELD = 'attachment';
+export const SMALL_ATTACHMENT_LIMIT_BYTES = 3 * 1024 * 1024;
 const MAX_CHUNK_ATTEMPTS = 3;
+const CHUNK_TIMEOUT_MS = 30_000;
+
+export type ReplyAttachmentStrategy = 'small' | 'large';
+
+export function replyAttachmentStrategy(size: number): ReplyAttachmentStrategy {
+  return size < SMALL_ATTACHMENT_LIMIT_BYTES ? 'small' : 'large';
+}
+
+export function createSmallAttachmentFormData(
+  handle: string,
+  index: number,
+  message: string,
+  attachments: unknown[],
+  file: Blob,
+  fileName: string,
+): FormData {
+  const form = new FormData();
+  form.append('handle', handle);
+  form.append('index', String(index));
+  form.append('mensagem', message);
+  form.append('attachments', JSON.stringify(attachments));
+  form.append(SMALL_ATTACHMENT_FORM_FILE_FIELD, file, fileName);
+  return form;
+}
 
 export function nextExpectedOffset(ranges: unknown, fallback: number): number {
   if (!Array.isArray(ranges)) return fallback;
@@ -26,6 +52,10 @@ export async function uploadFileToMicrosoft(
     let response: Response | null = null;
 
     for (let attempt = 1; attempt <= MAX_CHUNK_ATTEMPTS; attempt += 1) {
+      const timeoutController = new AbortController();
+      const timeoutId = globalThis.setTimeout(() => timeoutController.abort(), CHUNK_TIMEOUT_MS);
+      const abortChunk = () => timeoutController.abort(signal.reason);
+      signal.addEventListener('abort', abortChunk, { once: true });
       try {
         response = await fetchImpl(uploadUrl, {
           method: 'PUT',
@@ -34,12 +64,21 @@ export async function uploadFileToMicrosoft(
             'Content-Type': 'application/octet-stream',
           },
           body: chunk,
-          signal,
+          signal: timeoutController.signal,
         });
       } catch (error) {
-        if (signal.aborted || attempt === MAX_CHUNK_ATTEMPTS) throw error;
+        if (signal.aborted) throw new DOMException('Aborted', 'AbortError');
+        if (attempt === MAX_CHUNK_ATTEMPTS) {
+          if (error instanceof TypeError) {
+            throw new Error('O upload direto para o Microsoft Outlook foi bloqueado.');
+          }
+          throw new Error('O upload direto para o Microsoft Outlook excedeu o tempo limite.');
+        }
         await delay(500 * 2 ** (attempt - 1), signal);
         continue;
+      } finally {
+        globalThis.clearTimeout(timeoutId);
+        signal.removeEventListener('abort', abortChunk);
       }
 
       if (response.status === 408 || response.status === 429 || response.status >= 500) {
@@ -81,9 +120,13 @@ function retryDelayMs(response: Response, attempt: number): number {
 function delay(milliseconds: number, signal: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
     const timer = globalThis.setTimeout(resolve, milliseconds);
-    signal.addEventListener('abort', () => {
-      globalThis.clearTimeout(timer);
-      reject(new DOMException('Aborted', 'AbortError'));
-    }, { once: true });
+    signal.addEventListener(
+      'abort',
+      () => {
+        globalThis.clearTimeout(timer);
+        reject(new DOMException('Aborted', 'AbortError'));
+      },
+      { once: true },
+    );
   });
 }
