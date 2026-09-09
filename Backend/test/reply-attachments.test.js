@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { Readable } from "node:stream";
 import { after, before, test } from "node:test";
 import { adicionarAnexoSimplesResposta } from "../src/controllers/ticket.controller.js";
+import { errorMiddleware } from "../src/middlewares/error.middleware.js";
 import ticketRoutes from "../src/routes/ticket.routes.js";
 import {
   MAX_ATTACHMENT_SIZE_BYTES,
@@ -48,12 +49,34 @@ test("anexo acima de 150 MiB e extensões perigosas são bloqueados", () => {
   assert.throws(() => normalizeReplyAttachment({ name: "malware.exe", size: 10 }), /não é permitido/);
 });
 
-test("attachment simples vira um único fileAttachment não inline", async () => {
+function assertSmallAttachmentGraphRequest(request, { draftId, name, contentType, bytes }) {
+  assert.equal(
+    request.url,
+    `https://graph.microsoft.com/v1.0/me/messages/${encodeURIComponent(draftId)}/attachments`,
+  );
+  assert.equal(request.options.method, "POST");
+  assert.equal(new Headers(request.options.headers).get("Content-Type"), "application/json");
+  const body = JSON.parse(request.options.body);
+  assert.deepEqual(Object.keys(body).sort(), [
+    "@odata.type", "contentBytes", "contentType", "isInline", "name",
+  ].sort());
+  assert.equal(body["@odata.type"], "#microsoft.graph.fileAttachment");
+  assert.equal(body.name, name);
+  assert.equal(body.contentType, contentType);
+  assert.equal(body.isInline, false);
+  assert.equal("contentId" in body, false);
+  assert.equal(typeof body.contentBytes, "string");
+  assert.equal(body.contentBytes.startsWith("data:"), false);
+  assert.deepEqual(Buffer.from(body.contentBytes, "base64"), bytes);
+}
+
+test("PDF de 1 MB gera fileAttachment estrito e Base64 reversível", async () => {
+  const bytes = Buffer.alloc(1024 * 1024, 11);
   let request;
   await addMicrosoftDraftFileAttachment(
     "user-a",
     { draftId: "draft/1", attachment: {
-      name: "report.pdf", contentType: "application/pdf", bytes: Buffer.from("pdf"),
+      name: "report.pdf", size: bytes.length, contentType: "application/pdf", bytes,
     } },
     {
       getAccessToken: async () => "secret-token",
@@ -63,10 +86,9 @@ test("attachment simples vira um único fileAttachment não inline", async () =>
       },
     },
   );
-  const body = JSON.parse(request.options.body);
-  assert.equal(request.url.includes("draft%2F1/attachments"), true);
-  assert.equal(body.isInline, false);
-  assert.equal(body.contentBytes, Buffer.from("pdf").toString("base64"));
+  assertSmallAttachmentGraphRequest(request, {
+    draftId: "draft/1", name: "report.pdf", contentType: "application/pdf", bytes,
+  });
 });
 
 test("rota real de attachment recebe multipart PNG de 100 KB no campo attachment", async () => {
@@ -81,12 +103,13 @@ test("rota real de attachment recebe multipart PNG de 100 KB no campo attachment
   const multipartLayer = routeLayer.route.stack.find((layer) => layer.name === "multipartParser");
   assert.ok(multipartLayer, "a rota deve registrar o middleware multipart");
 
-  const bytes = new Uint8Array(100 * 1024).fill(7);
+  const bytes = Buffer.alloc(100 * 1024, 7);
   const manifest = [{ name: "print.png", size: bytes.length, contentType: "image/png" }];
+  const draft = await createFlow(manifest);
   const form = new FormData();
-  form.append("handle", "h".repeat(120));
+  form.append("handle", draft.handle);
   form.append("index", "0");
-  form.append("mensagem", "Resposta com anexo");
+  form.append("mensagem", "Mensagem da timeline");
   form.append("attachments", JSON.stringify(manifest));
   form.append(REPLY_ATTACHMENT_FILE_FIELD, new Blob([bytes], { type: "image/png" }), "print.png");
   const browserRequest = new Request("http://localhost/upload", { method: "POST", body: form });
@@ -110,22 +133,72 @@ test("rota real de attachment recebe multipart PNG de 100 KB no campo attachment
   assert.equal(req.file.size, 100 * 1024);
   assert.equal(req.file.buffer.length, 100 * 1024);
 
-  let uploadInput;
+  let graphRequest;
   let controllerResponse;
   const controllerRes = {
     status(status) { controllerResponse = { status }; return this; },
     json(body) { controllerResponse.body = body; return this; },
   };
   await adicionarAnexoSimplesResposta(req, controllerRes, assert.fail, {
-    uploadAttachment: async (input) => {
-      uploadInput = input;
-      return { name: input.file.originalname, size: input.file.size, content_type: input.file.mimetype };
-    },
+    uploadAttachment: (input) => uploadSmallTicketReplyAttachment(input, {
+      addAttachment: (userId, payload) => addMicrosoftDraftFileAttachment(userId, payload, {
+        getAccessToken: async () => "secret-token",
+        fetchImpl: async (url, options) => {
+          graphRequest = { url, options };
+          return new Response("{}", { status: 201 });
+        },
+      }),
+    }),
   });
   assert.equal(controllerResponse.status, 201);
   assert.equal(controllerResponse.body.success, true);
-  assert.equal(uploadInput.index, 0);
-  assert.deepEqual(uploadInput.attachments, manifest);
+  assertSmallAttachmentGraphRequest(graphRequest, {
+    draftId: "draft-1", name: "print.png", contentType: "image/png", bytes,
+  });
+});
+
+test("erro small preserva status e code públicos do Graph sem expor detalhes sensíveis", async () => {
+  const bytes = Buffer.alloc(100 * 1024, 5);
+  let graphFailure;
+  try {
+    await addMicrosoftDraftFileAttachment(
+      "user-a",
+      { draftId: "draft-secret", attachment: {
+        name: "print.png", size: bytes.length, contentType: "image/png", bytes,
+      } },
+      {
+        getAccessToken: async () => "secret-token",
+        fetchImpl: async () => new Response(JSON.stringify({
+          error: { code: "ErrorInvalidRequest", message: "sensitive graph detail" },
+        }), { status: 400, headers: { "Content-Type": "application/json" } }),
+      },
+    );
+  } catch (error) {
+    graphFailure = error;
+  }
+
+  let publicResponse;
+  const res = {
+    status(status) { publicResponse = { status }; return this; },
+    json(body) { publicResponse.body = body; return this; },
+  };
+  errorMiddleware(graphFailure, { method: "POST", originalUrl: "/attachments" }, res, () => {});
+  assert.deepEqual(publicResponse, {
+    status: 502,
+    body: {
+      success: false,
+      message: "O Microsoft Outlook não aceitou a operação com o anexo.",
+      code: "GRAPH_ATTACHMENT_FAILED",
+      graph_status: 400,
+      graph_error: "ErrorInvalidRequest",
+      attachment_strategy: "small",
+    },
+  });
+  const serialized = JSON.stringify(publicResponse);
+  assert.equal(serialized.includes("sensitive graph detail"), false);
+  assert.equal(serialized.includes("secret-token"), false);
+  assert.equal(serialized.includes("draft-secret"), false);
+  assert.equal(serialized.includes(bytes.toString("base64")), false);
 });
 
 test("arquivo de 5 MB cria upload session oficial sem enviar os bytes", async () => {

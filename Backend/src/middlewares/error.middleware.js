@@ -7,10 +7,19 @@ export function errorMiddleware(err, req, res, _next) {
   const message = err.message || "Erro interno do servidor.";
 
   if (err.microsoftDiagnosticError) {
+    const attachmentDetails = err.publicCode === "GRAPH_ATTACHMENT_FAILED"
+      && (err.attachmentStrategy === "small" || err.attachmentStrategy === "large")
+      ? {
+          graph_status: Number.isInteger(err.graphStatus) ? err.graphStatus : 502,
+          graph_error: typeof err.graphError === "string" ? err.graphError : "UnknownGraphError",
+          attachment_strategy: err.attachmentStrategy,
+        }
+      : {};
     return res.status(statusCode).json({
       success: false,
       message,
       code: err.diagnosticCode,
+      ...attachmentDetails,
     });
   }
 

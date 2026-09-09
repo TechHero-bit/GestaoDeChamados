@@ -456,7 +456,13 @@ export async function replyToMicrosoftMessage(
 
 const GRAPH_MESSAGES_URL = "https://graph.microsoft.com/v1.0/me/messages/";
 
-function graphAttachmentError(status, externalCode) {
+function safeGraphErrorCode(externalCode) {
+  return typeof externalCode === "string" && /^[A-Za-z0-9_.-]{1,100}$/.test(externalCode)
+    ? externalCode
+    : "UnknownGraphError";
+}
+
+function graphAttachmentError(status, externalCode, attachmentStrategy) {
   const limitCodes = new Set([
     "ErrorMessageSizeExceeded", "ErrorAttachmentSizeLimitExceeded",
     "RequestEntityTooLarge", "MessageTooBig", "MaximumAttachmentSizeExceeded",
@@ -472,8 +478,16 @@ function graphAttachmentError(status, externalCode) {
       diagnosticCode: sizeLimited ? "EXCHANGE_MESSAGE_SIZE_LIMIT" : "GRAPH_ATTACHMENT_FAILED",
       microsoftDiagnosticError: true,
       graphStatus: status,
+      graphError: safeGraphErrorCode(externalCode),
+      ...(attachmentStrategy === "small" || attachmentStrategy === "large"
+        ? { attachmentStrategy }
+        : {}),
     },
   );
+}
+
+function logAttachmentGraphDiagnostic(fields) {
+  console.info(`ATTACHMENT_GRAPH_DIAG: ${JSON.stringify(fields)}`);
 }
 
 async function acquireDraftToken(userId, getAccessToken) {
@@ -489,10 +503,10 @@ async function acquireDraftToken(userId, getAccessToken) {
   }
 }
 
-async function ensureGraphResponse(response, acceptedStatuses) {
+async function ensureGraphResponse(response, acceptedStatuses, attachmentStrategy) {
   if (acceptedStatuses.includes(response.status)) return;
   const code = await readGraphErrorCode(response);
-  throw graphAttachmentError(response.status, code);
+  throw graphAttachmentError(response.status, code, attachmentStrategy);
 }
 
 async function graphDraftFetch(fetchImpl, url, options, deliveryUnknown = false) {
@@ -569,21 +583,57 @@ export async function addMicrosoftDraftFileAttachment(
   { draftId, attachment },
   { getAccessToken = getValidMicrosoftAccessToken, fetchImpl = globalThis.fetch } = {},
 ) {
+  const fileBufferPresent = Buffer.isBuffer(attachment?.bytes);
+  const fileSizeValid = fileBufferPresent
+    && Number.isSafeInteger(attachment?.size)
+    && attachment.size === attachment.bytes.length;
+  const contentBytes = fileBufferPresent ? attachment.bytes.toString("base64") : "";
+  const base64Generated = contentBytes.length > 0
+    && !contentBytes.startsWith("data:")
+    && Buffer.from(contentBytes, "base64").equals(attachment.bytes);
+  const diagnostic = {
+    strategy: "small",
+    draft_exists: typeof draftId === "string" && draftId.length > 0,
+    file_buffer_present: fileBufferPresent,
+    file_size_valid: fileSizeValid,
+    base64_generated: base64Generated,
+    attachment_request_started: false,
+    attachment_created: false,
+  };
+  logAttachmentGraphDiagnostic(diagnostic);
+  if (!diagnostic.draft_exists || !fileSizeValid || !base64Generated) {
+    throw Object.assign(new Error("O arquivo recebido não corresponde ao anexo declarado."), {
+      statusCode: 400,
+      publicCode: "ATTACHMENT_MISMATCH",
+    });
+  }
+
   const accessToken = await acquireDraftToken(userId, getAccessToken);
-  const response = await graphDraftFetch(fetchImpl,
-    `${GRAPH_MESSAGES_URL}${encodeURIComponent(draftId)}/attachments`,
-    {
-      method: "POST",
-      headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
-      body: JSON.stringify({
-        "@odata.type": "#microsoft.graph.fileAttachment",
-        name: attachment.name, contentType: attachment.contentType,
-        isInline: false, contentBytes: attachment.bytes.toString("base64"),
-      }),
-      signal: AbortSignal.timeout(30000),
-    },
-  );
-  await ensureGraphResponse(response, [201]);
+  diagnostic.attachment_request_started = true;
+  logAttachmentGraphDiagnostic(diagnostic);
+  try {
+    const response = await graphDraftFetch(fetchImpl,
+      `${GRAPH_MESSAGES_URL}${encodeURIComponent(draftId)}/attachments`,
+      {
+        method: "POST",
+        headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+        body: JSON.stringify({
+          "@odata.type": "#microsoft.graph.fileAttachment",
+          name: attachment.name,
+          contentType: attachment.contentType,
+          contentBytes,
+          isInline: false,
+        }),
+        signal: AbortSignal.timeout(30000),
+      },
+    );
+    await ensureGraphResponse(response, [201], "small");
+    diagnostic.attachment_created = true;
+    logAttachmentGraphDiagnostic(diagnostic);
+  } catch (error) {
+    logAttachmentGraphDiagnostic(diagnostic);
+    throw error;
+  }
 }
 
 export async function createMicrosoftAttachmentUploadSession(
@@ -591,6 +641,13 @@ export async function createMicrosoftAttachmentUploadSession(
   { draftId, attachment },
   { getAccessToken = getValidMicrosoftAccessToken, fetchImpl = globalThis.fetch } = {},
 ) {
+  const diagnostic = {
+    strategy: "large",
+    upload_session_created: false,
+    chunk_started: false,
+    chunk_completed: false,
+  };
+  logAttachmentGraphDiagnostic(diagnostic);
   const accessToken = await acquireDraftToken(userId, getAccessToken);
   const response = await graphDraftFetch(fetchImpl,
     `${GRAPH_MESSAGES_URL}${encodeURIComponent(draftId)}/attachments/createUploadSession`,
@@ -605,11 +662,13 @@ export async function createMicrosoftAttachmentUploadSession(
       signal: AbortSignal.timeout(15000),
     },
   );
-  await ensureGraphResponse(response, [201]);
+  await ensureGraphResponse(response, [201], "large");
   const session = await readResponseJson(response);
   if (typeof session.uploadUrl !== "string" || !session.uploadUrl) {
     throw graphAttachmentError(502, "MissingUploadUrl");
   }
+  diagnostic.upload_session_created = true;
+  logAttachmentGraphDiagnostic(diagnostic);
   return {
     uploadUrl: session.uploadUrl,
     expirationDateTime: session.expirationDateTime,
