@@ -459,7 +459,7 @@ const GRAPH_MESSAGES_URL = "https://graph.microsoft.com/v1.0/me/messages/";
 function safeGraphErrorCode(externalCode) {
   return typeof externalCode === "string" && /^[A-Za-z0-9_.-]{1,100}$/.test(externalCode)
     ? externalCode
-    : "UnknownGraphError";
+    : "unknown";
 }
 
 function graphAttachmentError(status, externalCode, attachmentStrategy) {
@@ -468,14 +468,16 @@ function graphAttachmentError(status, externalCode, attachmentStrategy) {
     "RequestEntityTooLarge", "MessageTooBig", "MaximumAttachmentSizeExceeded",
   ]);
   const sizeLimited = status === 413 || limitCodes.has(externalCode);
+  const code = sizeLimited ? "EXCHANGE_MESSAGE_SIZE_LIMIT" : "GRAPH_ATTACHMENT_FAILED";
   return Object.assign(
     new Error(sizeLimited
       ? "O Outlook recusou o anexo porque o tamanho permitido pela caixa postal foi excedido."
       : "O Microsoft Outlook não aceitou a operação com o anexo."),
     {
       statusCode: sizeLimited ? 422 : 502,
-      publicCode: sizeLimited ? "EXCHANGE_MESSAGE_SIZE_LIMIT" : "GRAPH_ATTACHMENT_FAILED",
-      diagnosticCode: sizeLimited ? "EXCHANGE_MESSAGE_SIZE_LIMIT" : "GRAPH_ATTACHMENT_FAILED",
+      code,
+      publicCode: code,
+      diagnosticCode: code,
       microsoftDiagnosticError: true,
       graphStatus: status,
       graphError: safeGraphErrorCode(externalCode),

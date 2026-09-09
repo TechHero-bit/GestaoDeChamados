@@ -7,18 +7,23 @@ export function errorMiddleware(err, req, res, _next) {
   const message = err.message || "Erro interno do servidor.";
 
   if (err.microsoftDiagnosticError) {
-    const attachmentDetails = err.publicCode === "GRAPH_ATTACHMENT_FAILED"
-      && (err.attachmentStrategy === "small" || err.attachmentStrategy === "large")
+    const errorCode = err.code || err.publicCode || err.diagnosticCode;
+    const attachmentDetails = errorCode === "GRAPH_ATTACHMENT_FAILED"
       ? {
-          graph_status: Number.isInteger(err.graphStatus) ? err.graphStatus : 502,
-          graph_error: typeof err.graphError === "string" ? err.graphError : "UnknownGraphError",
-          attachment_strategy: err.attachmentStrategy,
+          graph_status: Number.isInteger(err.graphStatus) ? err.graphStatus : null,
+          graph_error: typeof err.graphError === "string"
+            && /^[A-Za-z0-9_.-]{1,100}$/.test(err.graphError)
+            ? err.graphError
+            : "unknown",
+          attachment_strategy: err.attachmentStrategy === "small" || err.attachmentStrategy === "large"
+            ? err.attachmentStrategy
+            : "unknown",
         }
       : {};
     return res.status(statusCode).json({
       success: false,
       message,
-      code: err.diagnosticCode,
+      code: errorCode,
       ...attachmentDetails,
     });
   }

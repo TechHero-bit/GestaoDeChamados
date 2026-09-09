@@ -157,32 +157,65 @@ test("rota real de attachment recebe multipart PNG de 100 KB no campo attachment
   });
 });
 
-test("erro small preserva status e code públicos do Graph sem expor detalhes sensíveis", async () => {
+test("erro percorre Graph, draft service, controller e error middleware sem perder diagnóstico seguro", async () => {
   const bytes = Buffer.alloc(100 * 1024, 5);
-  let graphFailure;
-  try {
-    await addMicrosoftDraftFileAttachment(
-      "user-a",
-      { draftId: "draft-secret", attachment: {
-        name: "print.png", size: bytes.length, contentType: "image/png", bytes,
-      } },
-      {
-        getAccessToken: async () => "secret-token",
-        fetchImpl: async () => new Response(JSON.stringify({
-          error: { code: "ErrorInvalidRequest", message: "sensitive graph detail" },
-        }), { status: 400, headers: { "Content-Type": "application/json" } }),
+  const attachments = [{ name: "print.png", size: bytes.length, contentType: "image/png" }];
+  const draft = await createFlow(attachments);
+  const req = {
+    params: { id: ticket.id },
+    user: { id: "user-a" },
+    multipartFields: {
+      handle: draft.handle,
+      index: "0",
+      mensagem: "Mensagem da timeline",
+      attachments: JSON.stringify(attachments),
+    },
+    file: {
+      originalname: "print.png",
+      mimetype: "image/png",
+      size: bytes.length,
+      buffer: bytes,
+    },
+  };
+  let graphErrorInstance;
+  let controllerError;
+  const unexpectedSuccess = {
+    status() { return this; },
+    json() { assert.fail("o controller não deve responder sucesso"); },
+  };
+  await adicionarAnexoSimplesResposta(req, unexpectedSuccess, (error) => {
+    controllerError = error;
+  }, {
+    uploadAttachment: (input) => uploadSmallTicketReplyAttachment(input, {
+      addAttachment: async (userId, payload) => {
+        try {
+          return await addMicrosoftDraftFileAttachment(userId, payload, {
+            getAccessToken: async () => "secret-token",
+            fetchImpl: async () => new Response(JSON.stringify({
+              error: { code: "ErrorInvalidRequest", message: "sensitive graph detail" },
+            }), { status: 400, headers: { "Content-Type": "application/json" } }),
+          });
+        } catch (error) {
+          graphErrorInstance = error;
+          throw error;
+        }
       },
-    );
-  } catch (error) {
-    graphFailure = error;
-  }
+    }),
+  });
+
+  assert.equal(controllerError, graphErrorInstance, "draft service e controller devem preservar o mesmo Error");
+  assert.equal(controllerError.code, "GRAPH_ATTACHMENT_FAILED");
+  assert.equal(controllerError.statusCode, 502);
+  assert.equal(controllerError.graphStatus, 400);
+  assert.equal(controllerError.graphError, "ErrorInvalidRequest");
+  assert.equal(controllerError.attachmentStrategy, "small");
 
   let publicResponse;
   const res = {
     status(status) { publicResponse = { status }; return this; },
     json(body) { publicResponse.body = body; return this; },
   };
-  errorMiddleware(graphFailure, { method: "POST", originalUrl: "/attachments" }, res, () => {});
+  errorMiddleware(controllerError, { method: "POST", originalUrl: "/attachments" }, res, () => {});
   assert.deepEqual(publicResponse, {
     status: 502,
     body: {
@@ -197,7 +230,7 @@ test("erro small preserva status e code públicos do Graph sem expor detalhes se
   const serialized = JSON.stringify(publicResponse);
   assert.equal(serialized.includes("sensitive graph detail"), false);
   assert.equal(serialized.includes("secret-token"), false);
-  assert.equal(serialized.includes("draft-secret"), false);
+  assert.equal(serialized.includes("draft-1"), false);
   assert.equal(serialized.includes(bytes.toString("base64")), false);
 });
 
