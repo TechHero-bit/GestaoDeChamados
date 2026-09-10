@@ -1,139 +1,166 @@
-<main class="flex min-h-dvh flex-col items-center justify-center bg-surface p-4 sm:p-6">
-  <div class="w-full max-w-md space-y-6">
-    <!-- Identidade visual / Cabeçalho -->
-    <div class="flex flex-col items-center text-center">
-      <div
-        class="mb-3 flex size-12 items-center justify-center rounded-xl bg-primary-container text-white shadow-md shadow-primary-container/20"
-      >
-        <span class="material-symbols-outlined text-2xl" aria-hidden="true">headset_mic</span>
+<main class="page-enter flex min-h-dvh items-center justify-center bg-app p-4 sm:p-6 lg:p-10">
+  <div
+    class="grid w-full max-w-6xl overflow-hidden rounded-2xl border border-border bg-surface shadow-card lg:min-h-[640px] lg:grid-cols-[1.08fr_0.92fr]"
+  >
+    <section
+      class="relative hidden overflow-hidden border-r border-border bg-sidebar p-10 lg:flex lg:flex-col lg:justify-center lg:gap-12 xl:p-12"
+      aria-label="SmartDesk"
+    >
+      <div class="relative flex items-center gap-3">
+        <div
+          class="flex size-10 items-center justify-center rounded-lg bg-accent text-accent-contrast"
+        >
+          <span class="material-symbols-outlined" aria-hidden="true">support_agent</span>
+        </div>
+        <div>
+          <p class="text-lg font-semibold tracking-[-0.02em]">SmartDesk</p>
+          <p class="text-xs uppercase tracking-[0.14em] text-text-muted">Service workspace</p>
+        </div>
       </div>
-      <h1 class="text-2xl font-bold tracking-tight text-on-surface sm:text-3xl">IT Helpdesk</h1>
-      <p class="mt-1 text-sm font-medium text-on-surface-variant">
-        Central de Atendimento e Gestão de Chamados
-      </p>
-    </div>
-
-    <!-- Card de Login -->
-    <div class="card p-6 shadow-card sm:p-8">
-      <div class="mb-6 border-b border-outline-variant/60 pb-4">
-        <h2 class="text-lg font-semibold text-on-surface">Acessar o Sistema</h2>
-        <p class="text-xs text-on-surface-variant">
-          Insira suas credenciais corporativas para continuar
+      <div class="relative max-w-xl">
+        <p class="eyebrow mb-4">Atendimento em foco</p>
+        <h1 class="text-4xl font-semibold leading-[1.12] tracking-[-0.035em] text-text xl:text-5xl">
+          Clareza para resolver cada chamado.
+        </h1>
+        <p class="mt-5 max-w-lg text-base leading-7 text-text-secondary">
+          Acompanhe conversas, prioridades e integrações em um único ambiente de trabalho.
         </p>
-      </div>
-
-      <!-- Alerta de Sessão Expirada -->
-      @if (sessionExpired()) {
-        <div
-          class="mb-5 flex items-start gap-2.5 rounded-lg border border-amber-500/30 bg-amber-50 p-3.5 text-xs text-amber-900"
-          role="alert"
-        >
-          <span class="material-symbols-outlined text-lg text-amber-700" aria-hidden="true">
-            timer
-          </span>
-          <div>
-            <p class="font-semibold">Sessão encerrada</p>
-            <p class="mt-0.5">Sua sessão expirou por inatividade. Faça login novamente.</p>
-          </div>
-        </div>
-      }
-
-      <!-- Alerta de Erro de Login -->
-      @if (error()) {
-        <div
-          class="mb-5 flex items-start gap-2.5 rounded-lg border border-error/30 bg-error-container p-3.5 text-xs text-on-error-container"
-          role="alert"
-        >
-          <span class="material-symbols-outlined text-lg text-error" aria-hidden="true">
-            error
-          </span>
-          <div>
-            <p class="font-semibold">Falha na autenticação</p>
-            <p class="mt-0.5">{{ error() }}</p>
-          </div>
-        </div>
-      }
-
-      <!-- Formulário de Login -->
-      <form (ngSubmit)="onSubmit()" class="space-y-4" novalidate>
-        <div>
-          <label for="email-input" class="field-label">E-mail corporativo</label>
-          <div class="relative">
-            <input
-              id="email-input"
-              name="email"
-              type="email"
-              [(ngModel)]="email"
-              class="field-control pl-1 pr-8"
-              placeholder="ex: usuario@empresa.com"
-              required
-              autocomplete="email"
-              [disabled]="loading()"
-            />
-            <span
-              class="material-symbols-outlined pointer-events-none absolute right-1 top-2 text-lg text-outline"
-              aria-hidden="true"
-            >
-              mail
-            </span>
-          </div>
-        </div>
-
-        <div>
-          <div class="flex items-center justify-between">
-            <label for="password-input" class="field-label">Senha</label>
-          </div>
-          <div class="relative">
-            <input
-              id="password-input"
-              name="password"
-              [type]="showPassword() ? 'text' : 'password'"
-              [(ngModel)]="password"
-              class="field-control pl-1 pr-10"
-              placeholder="••••••••"
-              required
-              autocomplete="current-password"
-              [disabled]="loading()"
-            />
-            <button
-              type="button"
-              class="absolute right-0 top-1 p-1 text-outline hover:text-on-surface"
-              (click)="togglePasswordVisibility()"
-              [title]="showPassword() ? 'Ocultar senha' : 'Exibir senha'"
-              [attr.aria-label]="showPassword() ? 'Ocultar senha' : 'Exibir senha'"
-              tabindex="-1"
-            >
-              <span class="material-symbols-outlined text-lg" aria-hidden="true">
-                {{ showPassword() ? 'visibility_off' : 'visibility' }}
-              </span>
-            </button>
-          </div>
-        </div>
-
-        <div class="pt-2">
-          <button
-            type="submit"
-            class="primary-button w-full justify-center py-2.5 text-sm font-semibold"
-            [disabled]="loading()"
+        <div class="mt-9 flex gap-8 border-t border-border-subtle pt-5 text-sm text-text-secondary">
+          <span class="flex items-center gap-2"
+            ><span class="size-1.5 rounded-full bg-success"></span>Sessão protegida</span
           >
+          <span class="flex items-center gap-2"
+            ><span class="size-1.5 rounded-full bg-accent"></span>Outlook integrado</span
+          >
+        </div>
+      </div>
+      <p class="relative text-xs text-text-muted">Ambiente corporativo de acesso restrito</p>
+    </section>
+
+    <section class="flex items-center justify-center bg-surface px-5 py-10 sm:px-10">
+      <div class="content-enter w-full max-w-md">
+        <div class="mb-8 flex items-center gap-3 lg:hidden">
+          <div
+            class="flex size-10 items-center justify-center rounded-lg bg-accent text-accent-contrast"
+          >
+            <span class="material-symbols-outlined" aria-hidden="true">support_agent</span>
+          </div>
+          <div>
+            <p class="text-lg font-semibold">SmartDesk</p>
+            <p class="text-xs uppercase tracking-[0.12em] text-text-muted">Service workspace</p>
+          </div>
+        </div>
+        <div class="mb-7">
+          <p class="eyebrow mb-2">Acesso seguro</p>
+          <h2 class="text-3xl font-semibold tracking-[-0.03em] text-text">Entre na sua conta</h2>
+          <p class="mt-2 text-sm text-text-secondary">
+            Use suas credenciais corporativas para continuar.
+          </p>
+        </div>
+
+        @if (sessionExpired()) {
+          <div
+            class="feedback feedback-enter mb-4 border-warning/30 bg-warning-soft text-warning"
+            role="alert"
+          >
+            <span class="material-symbols-outlined text-lg" aria-hidden="true">timer</span>
+            <div>
+              <p class="font-semibold">Sessão encerrada</p>
+              <p class="mt-0.5 text-text-secondary">
+                Sua sessão expirou por inatividade. Entre novamente.
+              </p>
+            </div>
+          </div>
+        }
+        @if (error()) {
+          <div
+            class="feedback feedback-enter mb-4 border-danger/30 bg-danger-soft text-on-error-container"
+            role="alert"
+          >
+            <span class="material-symbols-outlined text-lg text-danger" aria-hidden="true"
+              >error</span
+            >
+            <div>
+              <p class="font-semibold">Não foi possível entrar</p>
+              <p class="mt-0.5 text-text-secondary">{{ error() }}</p>
+            </div>
+          </div>
+        }
+
+        <form (ngSubmit)="onSubmit()" class="space-y-5" novalidate>
+          <div>
+            <label for="email-input" class="field-label">E-mail corporativo</label>
+            <div class="relative">
+              <span
+                class="material-symbols-outlined pointer-events-none absolute left-3 top-2.5 text-xl text-text-muted"
+                aria-hidden="true"
+                >mail</span
+              >
+              <input
+                id="email-input"
+                name="email"
+                type="email"
+                [(ngModel)]="email"
+                class="field-control pl-10"
+                placeholder="nome@empresa.com"
+                required
+                autocomplete="email"
+                [disabled]="loading()"
+              />
+            </div>
+          </div>
+          <div>
+            <label for="password-input" class="field-label">Senha</label>
+            <div class="relative">
+              <span
+                class="material-symbols-outlined pointer-events-none absolute left-3 top-2.5 text-xl text-text-muted"
+                aria-hidden="true"
+                >lock</span
+              >
+              <input
+                id="password-input"
+                name="password"
+                [type]="showPassword() ? 'text' : 'password'"
+                [(ngModel)]="password"
+                class="field-control px-10"
+                placeholder="Sua senha"
+                required
+                autocomplete="current-password"
+                [disabled]="loading()"
+              />
+              <button
+                type="button"
+                class="absolute right-1 top-0.5 flex size-9 items-center justify-center rounded-lg text-text-muted transition-colors duration-150 hover:text-text"
+                (click)="togglePasswordVisibility()"
+                [title]="showPassword() ? 'Ocultar senha' : 'Exibir senha'"
+                [attr.aria-label]="showPassword() ? 'Ocultar senha' : 'Exibir senha'"
+              >
+                <span class="material-symbols-outlined text-lg" aria-hidden="true">{{
+                  showPassword() ? 'visibility_off' : 'visibility'
+                }}</span>
+              </button>
+            </div>
+          </div>
+          <button type="submit" class="primary-button w-full py-2.5" [disabled]="loading()">
             @if (loading()) {
-              <span class="material-symbols-outlined animate-spin text-lg" aria-hidden="true">
-                progress_activity
-              </span>
-              <span>Entrando...</span>
+              <span class="material-symbols-outlined animate-spin text-lg" aria-hidden="true"
+                >progress_activity</span
+              >Entrando…
             } @else {
-              <span class="material-symbols-outlined text-lg" aria-hidden="true">login</span>
-              <span>Entrar</span>
+              Entrar
+              <span class="material-symbols-outlined text-lg" aria-hidden="true"
+                >arrow_forward</span
+              >
             }
           </button>
-        </div>
-      </form>
-    </div>
-
-    <!-- Informações de Segurança do Rodapé -->
-    <div class="flex items-center justify-center gap-1.5 text-center text-xs text-outline">
-      <span class="material-symbols-outlined text-sm" aria-hidden="true">lock</span>
-      <span>Acesso seguro com criptografia e controle de sessão</span>
-    </div>
+        </form>
+        <p
+          class="mt-6 flex items-center justify-center gap-1.5 text-center text-xs text-text-muted"
+        >
+          <span class="material-symbols-outlined text-sm" aria-hidden="true">verified_user</span
+          >Autenticação protegida e sessão com expiração automática
+        </p>
+      </div>
+    </section>
   </div>
 </main>

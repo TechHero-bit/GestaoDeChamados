@@ -1,0 +1,63 @@
+<div class="rounded-lg border border-border-subtle bg-surface px-3 py-2.5">
+  <div class="flex items-center gap-3">
+    <span
+      class="flex size-9 shrink-0 items-center justify-center rounded-lg bg-surface-elevated text-text-secondary"
+    >
+      <span class="material-symbols-outlined text-xl" aria-hidden="true">description</span>
+    </span>
+    <div class="min-w-0 flex-1">
+      <p class="truncate text-sm font-medium text-text" [title]="name()">{{ name() }}</p>
+      <div class="mt-0.5 flex flex-wrap items-center gap-x-2 text-xs text-text-muted">
+        <span>{{ formatBytes(size()) }}</span>
+        @switch (state()) {
+          @case ('pending') {
+            <span>Preparando</span>
+          }
+          @case ('uploading') {
+            <span class="text-accent">Enviando {{ progress() }}%</span>
+          }
+          @case ('done') {
+            <span class="text-success">Concluído</span>
+          }
+          @case ('error') {
+            <span class="text-danger">Erro no envio</span>
+          }
+          @case ('cancelled') {
+            <span>Cancelado</span>
+          }
+          @case ('available') {
+            <span>Disponível</span>
+          }
+        }
+      </div>
+    </div>
+    @if (removable()) {
+      <button
+        type="button"
+        class="toolbar-button"
+        [disabled]="disabled()"
+        (click)="removeRequested.emit()"
+        [attr.aria-label]="'Remover ' + name()"
+      >
+        <span class="material-symbols-outlined text-lg" aria-hidden="true">close</span>
+      </button>
+    }
+  </div>
+  @if (state() === 'uploading' || state() === 'error') {
+    <div
+      class="mt-2.5 h-1 overflow-hidden rounded-full bg-border"
+      role="progressbar"
+      [attr.aria-label]="'Progresso de ' + name()"
+      [attr.aria-valuenow]="progress()"
+      aria-valuemin="0"
+      aria-valuemax="100"
+    >
+      <div
+        class="h-full rounded-full transition-[width] duration-150"
+        [class.bg-danger]="state() === 'error'"
+        [class.bg-accent]="state() !== 'error'"
+        [style.width.%]="progress()"
+      ></div>
+    </div>
+  }
+</div>

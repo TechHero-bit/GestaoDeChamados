@@ -1,0 +1,18 @@
+@switch (priority()) {
+  @case ('Baixa') {
+    <span class="priority-badge border-success/20 bg-success-soft/70 text-success">
+      <span class="size-1.5 rounded-full bg-text-muted" aria-hidden="true"></span>Baixa
+    </span>
+  }
+  @case ('Normal') {
+    <span class="priority-badge border-accent/25 bg-accent-soft text-accent">
+      <span class="size-1.5 rounded-full bg-accent" aria-hidden="true"></span>Normal
+    </span>
+  }
+  @case ('Alta') {
+    <span class="priority-badge border-danger/25 bg-danger-soft text-danger">
+      <span class="size-1.5 rounded-full bg-danger" aria-hidden="true"></span>Alta
+    </span>
+  }
+}
+

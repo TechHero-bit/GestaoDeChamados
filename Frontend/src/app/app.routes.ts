@@ -5,7 +5,7 @@ import { guestGuard } from './core/guards/guest.guard';
 export const routes: Routes = [
   {
     path: 'login',
-    title: 'Acessar o Sistema | Helpdesk Central',
+    title: 'Entrar | SmartDesk',
     canActivate: [guestGuard],
     loadComponent: () =>
       import('./features/auth/pages/login/login.page').then((module) => module.LoginPage),
@@ -16,10 +16,18 @@ export const routes: Routes = [
     loadComponent: () =>
       import('./layout/app-shell/app-shell.component').then((module) => module.AppShellComponent),
     children: [
-      { path: '', redirectTo: 'tickets', pathMatch: 'full' },
+      { path: '', redirectTo: 'dashboard', pathMatch: 'full' },
+      {
+        path: 'dashboard',
+        title: 'Dashboard | SmartDesk',
+        loadComponent: () =>
+          import('./features/dashboard/pages/dashboard/dashboard.page').then(
+            (module) => module.DashboardPage,
+          ),
+      },
       {
         path: 'tickets',
-        title: 'Fila de Atendimento | Helpdesk Central',
+        title: 'Fila de atendimento | SmartDesk',
         loadComponent: () =>
           import('./features/tickets/pages/ticket-list/ticket-list.page').then(
             (module) => module.TicketListPage,
@@ -27,19 +35,53 @@ export const routes: Routes = [
       },
       {
         path: 'tickets/:id',
-        title: 'Atendimento do Chamado | Helpdesk Central',
+        title: 'Atendimento do chamado | SmartDesk',
         loadComponent: () =>
           import('./features/tickets/pages/ticket-detail/ticket-detail.page').then(
             (module) => module.TicketDetailPage,
           ),
       },
       {
-        path: 'settings/integrations',
-        title: 'Integrações | Helpdesk Central',
+        path: 'reports',
+        title: 'Relatórios | SmartDesk',
         loadComponent: () =>
-          import('./features/settings/pages/integrations/integrations.page').then(
-            (module) => module.IntegrationsPage,
+          import('./features/reports/pages/reports/reports.page').then(
+            (module) => module.ReportsPage,
           ),
+      },
+      {
+        path: 'settings',
+        loadComponent: () =>
+          import('./features/settings/layout/settings-layout/settings-layout.component').then(
+            (module) => module.SettingsLayoutComponent,
+          ),
+        children: [
+          { path: '', pathMatch: 'full', redirectTo: 'profile' },
+          {
+            path: 'profile',
+            title: 'Perfil | SmartDesk',
+            loadComponent: () =>
+              import('./features/settings/pages/profile/profile.page').then(
+                (module) => module.ProfilePage,
+              ),
+          },
+          {
+            path: 'integrations',
+            title: 'Integrações | SmartDesk',
+            loadComponent: () =>
+              import('./features/settings/pages/integrations/integrations.page').then(
+                (module) => module.IntegrationsPage,
+              ),
+          },
+          {
+            path: 'signature',
+            title: 'Assinatura | SmartDesk',
+            loadComponent: () =>
+              import('./features/settings/pages/signature/signature.page').then(
+                (module) => module.SignaturePage,
+              ),
+          },
+        ],
       },
     ],
   },

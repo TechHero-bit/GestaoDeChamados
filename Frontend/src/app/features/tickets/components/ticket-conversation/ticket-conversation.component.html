@@ -1,16 +1,21 @@
 <section
-  class="flex flex-col gap-6 bg-surface-bright p-4 md:p-6"
+  class="flex min-h-64 flex-col gap-4 px-4 py-5 sm:px-6"
   aria-label="Conversa do chamado"
   aria-live="polite"
 >
+  <div
+    class="flex items-center gap-3 text-xs font-semibold uppercase tracking-[0.1em] text-text-muted"
+  >
+    <span>Histórico da conversa</span><span class="h-px flex-1 bg-border-subtle"></span>
+  </div>
   @for (message of ticket().messages; track message.id) {
     <app-ticket-message [message]="message" [ticket]="ticket()" />
   } @empty {
-    <div class="py-12 text-center text-on-surface-variant">
-      <span class="material-symbols-outlined mb-2 text-4xl text-outline" aria-hidden="true"
+    <div class="py-12 text-center text-text-secondary">
+      <span class="material-symbols-outlined mb-2 text-4xl text-text-muted" aria-hidden="true"
         >forum</span
       >
-      <p class="font-semibold text-on-surface">Conversa ainda não registrada</p>
+      <p class="font-semibold text-text">Conversa ainda não registrada</p>
       <p class="mt-1 text-sm">A mensagem original não está disponível na timeline.</p>
     </div>
   }

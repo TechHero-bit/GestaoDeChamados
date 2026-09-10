@@ -12,6 +12,7 @@ import {
   markUnfinishedAttachments,
   updateAttachmentProgress,
 } from '../../../../core/utils/reply-attachment-state';
+import { FileAttachmentComponent } from '../../../../shared/components/file-attachment/file-attachment.component';
 
 const ALLOWED_EXTENSIONS = new Set([
   'pdf',
@@ -56,7 +57,7 @@ const BLOCKED_EXTENSIONS = new Set([
 
 @Component({
   selector: 'app-ticket-reply-editor',
-  imports: [FormsModule],
+  imports: [FormsModule, FileAttachmentComponent],
   templateUrl: './ticket-reply-editor.component.html',
 })
 export class TicketReplyEditorComponent implements OnDestroy {
@@ -77,13 +78,11 @@ export class TicketReplyEditorComponent implements OnDestroy {
       this.sending() &&
       this.attachments().some((item) => item.state === 'pending' || item.state === 'uploading'),
   );
-
   message = '';
 
   send(): void {
     const message = this.message.trim();
     if (!message || this.sending()) return;
-
     this.error.set('');
     this.sentNotice.set(false);
     this.sending.set(true);
@@ -148,11 +147,6 @@ export class TicketReplyEditorComponent implements OnDestroy {
     this.uploadAbort?.abort();
   }
 
-  formatBytes(bytes: number): string {
-    if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
-    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  }
-
   private async sendWithAttachments(message: string): Promise<void> {
     const selected = this.attachments();
     this.uploadAbort = new AbortController();
@@ -162,11 +156,10 @@ export class TicketReplyEditorComponent implements OnDestroy {
         message,
         selected.map(({ file }) => file),
         this.uploadAbort.signal,
-        (index, uploaded, state) => {
+        (index, uploaded, state) =>
           this.attachments.update((items) =>
             updateAttachmentProgress(items, index, uploaded, state),
-          );
-        },
+          ),
       );
       this.message = '';
       this.attachments.set([]);

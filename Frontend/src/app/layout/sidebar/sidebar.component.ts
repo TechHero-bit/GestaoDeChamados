@@ -10,10 +10,10 @@ import { AuthService } from '../../core/services/auth.service';
 })
 export class SidebarComponent {
   private readonly authService = inject(AuthService);
-
   readonly open = input(false);
+  readonly collapsed = input(false);
   readonly closeSidebar = output<void>();
-
+  readonly collapseRequested = output<void>();
   readonly currentUser = this.authService.currentUser;
 
   onLogout(): void {

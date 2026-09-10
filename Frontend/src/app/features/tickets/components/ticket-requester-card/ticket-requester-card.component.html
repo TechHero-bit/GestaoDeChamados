@@ -1,37 +1,28 @@
-<section class="card overflow-hidden" aria-labelledby="requester-heading">
-  <header class="card-header">
-    <span class="material-symbols-outlined text-outline" aria-hidden="true">person</span>
-    <h3 id="requester-heading" class="font-semibold">Solicitante</h3>
-  </header>
-  <div class="p-4">
-    <div class="flex items-center gap-3">
-      <div
-        class="flex size-12 shrink-0 items-center justify-center rounded-full border border-outline-variant bg-secondary-container font-semibold text-on-secondary-container"
-      >
-        {{ initials(ticket().remetente_nome, ticket().remetente_email) }}
-      </div>
-      <div class="min-w-0">
-        <p class="truncate font-semibold">
-          {{ requesterName(ticket().remetente_nome, ticket().remetente_email) }}
-        </p>
-        <a
-          class="block truncate text-sm text-primary hover:underline"
-          [href]="'mailto:' + ticket().remetente_email"
-          >{{ ticket().remetente_email }}</a
-        >
-      </div>
-    </div>
-    <div class="mt-4 rounded bg-surface-container-low p-3 text-sm text-on-surface-variant">
-      Departamento, cargo, telefone e localidade ainda não estão disponíveis para este solicitante.
-    </div>
-    <button
-      type="button"
-      class="secondary-button mt-4 w-full"
-      disabled
-      title="Histórico disponível após a integração de usuários"
+<section class="side-section" aria-labelledby="requester-heading">
+  <h2 id="requester-heading" class="mb-4 text-sm font-semibold text-text">Solicitante</h2>
+  <div class="flex items-center gap-3">
+    <div
+      class="flex size-10 shrink-0 items-center justify-center rounded-lg bg-surface-elevated text-xs font-bold text-text-secondary"
     >
-      <span class="material-symbols-outlined text-lg" aria-hidden="true">history</span>
-      Ver histórico
-    </button>
+      {{ initials(ticket().remetente_nome, ticket().remetente_email) }}
+    </div>
+    <div class="min-w-0">
+      <p class="truncate text-sm font-semibold text-text">
+        {{ requesterName(ticket().remetente_nome, ticket().remetente_email) }}
+      </p>
+      <a
+        class="block truncate text-sm text-accent transition-colors duration-150 hover:text-primary-fixed-dim"
+        [href]="'mailto:' + ticket().remetente_email"
+        >{{ ticket().remetente_email }}</a
+      >
+    </div>
   </div>
+  <a
+    class="secondary-button mt-4 w-full"
+    routerLink="/tickets"
+    [queryParams]="{ search: ticket().remetente_email }"
+  >
+    <span class="material-symbols-outlined text-lg" aria-hidden="true">history</span>
+    Ver histórico de chamados
+  </a>
 </section>

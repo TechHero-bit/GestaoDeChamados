@@ -1,4 +1,4 @@
-import { Component, OnDestroy, output } from '@angular/core';
+import { Component, input, OnDestroy, OnInit, output } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { TicketListFilters, TicketStatus } from '../../../../core/models/ticket.model';
 
@@ -7,13 +7,18 @@ import { TicketListFilters, TicketStatus } from '../../../../core/models/ticket.
   imports: [FormsModule],
   templateUrl: './ticket-filters.component.html',
 })
-export class TicketFiltersComponent implements OnDestroy {
+export class TicketFiltersComponent implements OnInit, OnDestroy {
   readonly filtersChanged = output<TicketListFilters>();
+  readonly initialSearch = input('');
 
   search = '';
   status: TicketStatus | '' = '';
   date = '';
   private searchTimer?: ReturnType<typeof setTimeout>;
+
+  ngOnInit(): void {
+    this.search = this.initialSearch();
+  }
 
   onSearchChange(): void {
     clearTimeout(this.searchTimer);

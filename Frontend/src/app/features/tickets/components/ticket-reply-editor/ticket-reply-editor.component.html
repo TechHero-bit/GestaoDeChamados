@@ -1,58 +1,72 @@
-<section class="border-t border-outline-variant bg-surface p-4" aria-labelledby="reply-heading">
-  <h3 id="reply-heading" class="sr-only">Responder via e-mail</h3>
+<section
+  class="border-t border-border-subtle bg-surface-elevated px-4 py-4 sm:px-6"
+  aria-labelledby="reply-heading"
+>
+  <div class="mb-3 flex items-center justify-between gap-3">
+    <h2 id="reply-heading" class="text-sm font-semibold text-text">Responder ao solicitante</h2>
+    <span class="hidden text-xs text-text-muted sm:block">Ctrl + Enter para enviar</span>
+  </div>
   <div
-    class="overflow-hidden rounded-lg border border-outline-variant bg-white transition focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/20"
+    class="overflow-hidden rounded-xl border border-border bg-surface-raised transition-[border-color,box-shadow] duration-150 focus-within:border-accent focus-within:ring-2 focus-within:ring-accent/10"
   >
-    <div
-      class="flex items-center gap-1 border-b border-outline-variant/50 bg-surface-container-low p-2"
+    <textarea
+      class="min-h-28 w-full resize-y border-0 bg-transparent px-4 py-3 text-[15px] leading-6 text-text outline-none placeholder:text-text-muted"
+      [placeholder]="'Escreva uma resposta para ' + requester() + '…'"
+      maxlength="10000"
+      [(ngModel)]="message"
+      [disabled]="sending()"
+      (keydown.control.enter)="send()"
+    ></textarea>
+
+    @if (attachments().length > 0) {
+      <div
+        class="grid gap-2 border-t border-border-subtle px-3 py-3 lg:grid-cols-2"
+        aria-label="Anexos selecionados"
+      >
+        @for (attachment of attachments(); track attachment.file; let index = $index) {
+          <app-file-attachment
+            [name]="attachment.file.name"
+            [size]="attachment.file.size"
+            [uploaded]="attachment.uploaded"
+            [progress]="attachment.progress"
+            [state]="attachment.state"
+            [removable]="true"
+            [disabled]="sending()"
+            (removeRequested)="removeFile(index)"
+          />
+        }
+      </div>
+    }
+
+    @if (error()) {
+      <p
+        class="feedback-enter mx-3 mb-3 flex items-start gap-2 rounded-lg border border-danger/25 bg-danger-soft px-3 py-2.5 text-sm text-on-error-container"
+        role="alert"
+      >
+        <span class="material-symbols-outlined text-lg text-danger" aria-hidden="true">error</span
+        >{{ error() }}
+      </p>
+    }
+    @if (sentNotice()) {
+      <p
+        class="feedback-enter mx-3 mb-3 flex items-center gap-2 rounded-lg border border-success/25 bg-success-soft px-3 py-2.5 text-sm text-success"
+        role="status"
+      >
+        <span class="material-symbols-outlined text-lg" aria-hidden="true">check_circle</span
+        >Resposta enviada e adicionada à conversa.
+      </p>
+    }
+
+    <footer
+      class="flex flex-col items-stretch justify-between gap-3 border-t border-border-subtle bg-surface px-3 py-3 sm:flex-row sm:items-center"
     >
-      <button
-        class="toolbar-button"
-        type="button"
-        disabled
-        title="Formatação em negrito ainda não disponível"
-        aria-label="Negrito indisponível"
-      >
-        <span class="material-symbols-outlined text-xl" aria-hidden="true">format_bold</span>
-      </button>
-      <button
-        class="toolbar-button"
-        type="button"
-        disabled
-        title="Formatação em itálico ainda não disponível"
-        aria-label="Itálico indisponível"
-      >
-        <span class="material-symbols-outlined text-xl" aria-hidden="true">format_italic</span>
-      </button>
-      <span class="mx-1 h-4 w-px bg-outline-variant" aria-hidden="true"></span>
-      <button
-        class="toolbar-button"
-        type="button"
-        disabled
-        title="Listas ainda não disponíveis"
-        aria-label="Lista indisponível"
-      >
-        <span class="material-symbols-outlined text-xl" aria-hidden="true"
-          >format_list_bulleted</span
-        >
-      </button>
-      <button
-        class="toolbar-button"
-        type="button"
-        disabled
-        title="Links ainda não disponíveis"
-        aria-label="Link indisponível"
-      >
-        <span class="material-symbols-outlined text-xl" aria-hidden="true">link</span>
-      </button>
       <label
-        class="toolbar-button"
+        class="secondary-button cursor-pointer"
         [class.pointer-events-none]="sending()"
         [class.opacity-50]="sending()"
-        title="Adicionar anexos"
-        aria-label="Adicionar anexos"
       >
-        <span class="material-symbols-outlined text-xl" aria-hidden="true">attach_file</span>
+        <span class="material-symbols-outlined text-lg" aria-hidden="true">attach_file</span>Anexar
+        arquivos
         <input
           class="sr-only"
           type="file"
@@ -62,123 +76,12 @@
           (change)="selectFiles($event)"
         />
       </label>
-      <span class="ml-auto hidden text-sm text-outline sm:inline">Responder via e-mail</span>
-    </div>
-
-    <textarea
-      class="min-h-32 w-full resize-y border-0 bg-transparent p-3 text-sm leading-6 outline-none placeholder:text-outline md:text-base"
-      [placeholder]="'Digite sua resposta para ' + requester() + '...'"
-      maxlength="10000"
-      [(ngModel)]="message"
-      [disabled]="sending()"
-      (keydown.control.enter)="send()"
-    ></textarea>
-
-    @if (attachments().length > 0) {
-      <div
-        class="space-y-2 border-t border-outline-variant/40 px-3 py-3"
-        aria-label="Anexos selecionados"
-      >
-        @for (attachment of attachments(); track index; let index = $index) {
-          <div class="rounded-md bg-surface-container-low px-3 py-2 text-sm">
-            <div class="flex items-center gap-2">
-              <span class="material-symbols-outlined text-lg text-outline" aria-hidden="true"
-                >description</span
-              >
-              <span class="min-w-0 flex-1 truncate font-medium" [title]="attachment.file.name">{{
-                attachment.file.name
-              }}</span>
-              @if (attachment.state === 'done') {
-                <span class="text-[#2E7D32]" aria-label="Concluído">Concluído ✓</span>
-              } @else if (attachment.state === 'cancelled') {
-                <span class="text-outline">Cancelado</span>
-              } @else if (attachment.state === 'error') {
-                <span class="text-error">Erro</span>
-              } @else if (attachment.state === 'uploading' && attachment.uploaded === 0) {
-                <span class="text-xs text-outline">Enviando...</span>
-              } @else {
-                <span class="text-xs text-outline">
-                  {{ attachment.progress }}% · {{ formatBytes(attachment.uploaded) }} /
-                  {{ formatBytes(attachment.file.size) }}
-                </span>
-              }
-              <button
-                type="button"
-                class="toolbar-button"
-                [disabled]="sending()"
-                (click)="removeFile(index)"
-                aria-label="Remover anexo"
-              >
-                <span class="material-symbols-outlined text-lg" aria-hidden="true">close</span>
-              </button>
-            </div>
-            @if (attachment.state === 'uploading' || attachment.state === 'error') {
-              <div
-                class="mt-2 h-1.5 overflow-hidden rounded-full bg-outline-variant"
-                role="progressbar"
-                [attr.aria-valuenow]="attachment.uploaded > 0 ? attachment.progress : null"
-                aria-valuemin="0"
-                aria-valuemax="100"
-              >
-                <div
-                  class="h-full rounded-full transition-all"
-                  [class.animate-pulse]="
-                    attachment.state === 'uploading' && attachment.uploaded === 0
-                  "
-                  [class.bg-error]="attachment.state === 'error'"
-                  [class.bg-primary]="attachment.state !== 'error'"
-                  [style.width.%]="
-                    attachment.state === 'uploading' && attachment.uploaded === 0
-                      ? 100
-                      : attachment.progress
-                  "
-                ></div>
-              </div>
-            }
-          </div>
-        }
-      </div>
-    }
-
-    @if (error()) {
-      <p class="mx-3 mb-2 flex items-center gap-1 text-sm text-error" role="alert">
-        <span class="material-symbols-outlined text-lg" aria-hidden="true">error</span>
-        {{ error() }}
-      </p>
-    }
-    @if (sentNotice()) {
-      <p class="mx-3 mb-2 flex items-center gap-1 text-sm text-[#2E7D32]" role="status">
-        <span class="material-symbols-outlined text-lg" aria-hidden="true">check_circle</span>
-        Resposta enviada e adicionada à conversa.
-      </p>
-    }
-
-    <footer
-      class="flex flex-col items-stretch justify-between gap-3 border-t border-outline-variant/40 p-3 sm:flex-row sm:items-center"
-    >
-      <button
-        class="ghost-button justify-center sm:justify-start"
-        type="button"
-        disabled
-        title="Respostas rápidas ainda não disponíveis"
-      >
-        <span class="material-symbols-outlined text-lg" aria-hidden="true">smart_toy</span>
-        Usar resposta rápida
-      </button>
       <div class="flex items-center justify-end gap-2">
         @if (uploadInProgress()) {
-          <button class="secondary-button" type="button" (click)="cancel()">Cancelar</button>
+          <button class="secondary-button" type="button" (click)="cancel()">Cancelar envio</button>
         }
         <button
-          class="secondary-button hidden sm:inline-flex"
-          type="button"
-          disabled
-          title="Rascunhos ainda não disponíveis"
-        >
-          Salvar rascunho
-        </button>
-        <button
-          class="primary-button min-w-28 justify-center"
+          class="primary-button min-w-36"
           type="button"
           [disabled]="!message.trim() || sending()"
           (click)="send()"
@@ -186,15 +89,13 @@
           @if (sending()) {
             <span class="material-symbols-outlined animate-spin text-lg" aria-hidden="true"
               >progress_activity</span
-            >
-            {{ attachments().length > 0 ? 'Enviando anexos...' : 'Enviando' }}
+            >{{ attachments().length > 0 ? 'Enviando arquivos' : 'Enviando' }}
           } @else {
-            <span class="material-symbols-outlined text-lg" aria-hidden="true">send</span>
-            Enviar
+            <span class="material-symbols-outlined text-lg" aria-hidden="true">send</span>Enviar
+            resposta
           }
         </button>
       </div>
     </footer>
   </div>
-  <p class="mt-2 text-right text-xs text-outline">Atalho: Ctrl + Enter</p>
 </section>

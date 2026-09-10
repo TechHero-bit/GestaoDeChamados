@@ -1,9 +1,11 @@
 import { Component, input } from '@angular/core';
+import { RouterLink } from '@angular/router';
 import { Ticket } from '../../../../core/models/ticket.model';
 import { initials, requesterName } from '../../../../shared/utils/ticket-formatters';
 
 @Component({
   selector: 'app-ticket-requester-card',
+  imports: [RouterLink],
   templateUrl: './ticket-requester-card.component.html',
 })
 export class TicketRequesterCardComponent {

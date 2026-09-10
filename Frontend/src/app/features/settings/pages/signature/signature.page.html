@@ -1,0 +1,129 @@
+@if (feedbackMessage()) {
+  <div
+    class="feedback feedback-enter mb-4 border-success/30 bg-success-soft text-success"
+    role="status"
+  >
+    <span class="material-symbols-outlined text-lg" aria-hidden="true">check_circle</span>
+    {{ feedbackMessage() }}
+  </div>
+}
+@if (errorMessage()) {
+  <div
+    class="feedback feedback-enter mb-4 border-danger/30 bg-danger-soft text-on-error-container"
+    role="alert"
+  >
+    <span class="material-symbols-outlined text-lg text-danger" aria-hidden="true">error</span>
+    {{ errorMessage() }}
+  </div>
+}
+
+<section class="card content-enter overflow-hidden" aria-labelledby="signature-heading">
+  <div class="card-header">
+    <span class="flex size-10 items-center justify-center rounded-lg bg-accent-soft text-accent">
+      <span class="material-symbols-outlined" aria-hidden="true">draw</span>
+    </span>
+    <div>
+      <h2 id="signature-heading" class="font-semibold text-text">Assinatura de e-mail</h2>
+      <p class="text-xs text-text-muted">Imagem PNG usada nas respostas</p>
+    </div>
+  </div>
+
+  <div class="space-y-6 p-5 sm:p-6">
+    @if (loading()) {
+      <div class="space-y-3" aria-label="Carregando assinatura">
+        <div class="skeleton h-4 w-40"></div>
+        <div class="skeleton h-32 w-full"></div>
+      </div>
+    } @else {
+      <label
+        class="flex cursor-pointer items-center justify-between gap-4 rounded-lg border border-border-subtle bg-surface px-4 py-3 text-sm font-semibold text-text"
+      >
+        <span>
+          <span class="block">Usar assinatura nas respostas</span>
+          <span class="mt-0.5 block text-xs font-normal text-text-muted">
+            A assinatura é adicionada pelo envio atual, sem alterar o arquivo no navegador.
+          </span>
+        </span>
+        <input
+          class="size-4 shrink-0 accent-accent"
+          type="checkbox"
+          [checked]="signature()?.enabled ?? false"
+          [disabled]="toggling()"
+          (change)="toggleSignature($event)"
+        />
+      </label>
+
+      <div>
+        <p class="field-label">Prévia da assinatura</p>
+        @if (localPreviewUrl() || signature()?.image_url) {
+          <div
+            class="flex min-h-36 items-center justify-center overflow-hidden rounded-lg border border-border-subtle bg-surface-elevated p-4"
+          >
+            <img
+              class="max-h-48 max-w-full object-contain"
+              width="720"
+              height="192"
+              [src]="localPreviewUrl() || signature()?.image_url || ''"
+              alt="Prévia da assinatura de e-mail"
+            />
+          </div>
+        } @else {
+          <div
+            class="rounded-lg border border-dashed border-border bg-surface-elevated px-4 py-10 text-center"
+          >
+            <span class="material-symbols-outlined mb-2 text-3xl text-text-muted" aria-hidden="true"
+              >image_not_supported</span
+            >
+            <p class="text-sm text-text-secondary">Nenhuma assinatura cadastrada.</p>
+          </div>
+        }
+      </div>
+
+      <div class="flex flex-wrap gap-3">
+        <label class="secondary-button cursor-pointer">
+          <span class="material-symbols-outlined text-lg" aria-hidden="true">upload</span>
+          Escolher PNG
+          <input
+            class="sr-only"
+            type="file"
+            accept=".png,image/png"
+            (change)="onFileSelected($event)"
+          />
+        </label>
+        @if (signature()?.has_signature || localPreviewUrl()) {
+          <button
+            class="secondary-button"
+            type="button"
+            [disabled]="removing()"
+            (click)="removeSignature()"
+          >
+            <span class="material-symbols-outlined text-lg text-danger" aria-hidden="true"
+              >delete</span
+            >
+            {{ removing() ? 'Removendo…' : 'Remover' }}
+          </button>
+        }
+      </div>
+
+      @if (selectedFile()) {
+        <div
+          class="flex flex-col gap-3 rounded-lg border border-primary-border bg-accent-soft p-4 sm:flex-row sm:items-center sm:justify-between"
+        >
+          <div class="min-w-0">
+            <p class="text-xs text-text-muted">Arquivo selecionado</p>
+            <p class="truncate text-sm font-semibold text-text">{{ selectedFile()?.name }}</p>
+          </div>
+          <button
+            class="primary-button shrink-0"
+            type="button"
+            [disabled]="saving()"
+            (click)="saveSignature()"
+          >
+            <span class="material-symbols-outlined text-lg" aria-hidden="true">save</span>
+            {{ saving() ? 'Salvando…' : 'Salvar assinatura' }}
+          </button>
+        </div>
+      }
+    }
+  </div>
+</section>

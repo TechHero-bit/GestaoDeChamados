@@ -1,4 +1,4 @@
-import { Component, input } from '@angular/core';
+import { ChangeDetectionStrategy, Component, input } from '@angular/core';
 import { TicketDetail, TicketMessage } from '../../../../core/models/ticket.model';
 import {
   formatLongDate,
@@ -9,6 +9,7 @@ import {
 @Component({
   selector: 'app-ticket-message',
   templateUrl: './ticket-message.component.html',
+  changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class TicketMessageComponent {
   readonly message = input.required<TicketMessage>();

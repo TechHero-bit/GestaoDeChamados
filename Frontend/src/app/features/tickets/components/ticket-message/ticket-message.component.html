@@ -1,65 +1,57 @@
 @if (message().direcao === 'Entrada') {
-  <article class="flex items-start gap-3 md:gap-4">
+  <article class="message-enter flex items-start gap-3 sm:gap-4">
     <div
-      class="flex size-10 shrink-0 items-center justify-center rounded-full border border-outline-variant bg-secondary-container text-sm font-semibold text-on-secondary-container"
+      class="flex size-9 shrink-0 items-center justify-center rounded-lg bg-surface-elevated text-xs font-bold text-text-secondary"
     >
       {{ initials(ticket().remetente_nome, ticket().remetente_email) }}
     </div>
-    <div
-      class="relative min-w-0 flex-1 rounded-lg rounded-tl-none border border-outline-variant bg-white p-4 shadow-sm"
-    >
-      @if (message().outlook_message_id) {
-        <span
-          class="absolute -top-3 right-3 inline-flex items-center gap-1 rounded border border-outline-variant bg-white px-2 py-0.5 text-xs text-outline shadow-sm"
-        >
-          <span class="material-symbols-outlined text-sm" aria-hidden="true">mail</span>
-          via Outlook
-        </span>
-      }
-      <header
-        class="mb-3 flex flex-col gap-1 border-b border-outline-variant/50 pb-2 sm:flex-row sm:items-end sm:justify-between"
-      >
+    <div class="min-w-0 flex-1 border-l-2 border-border bg-surface-elevated px-4 py-3.5">
+      <header class="mb-3 flex flex-col gap-1 sm:flex-row sm:items-start sm:justify-between">
         <div class="min-w-0">
-          <p class="font-semibold">
+          <p class="text-sm font-semibold text-text">
             {{ requesterName(ticket().remetente_nome, ticket().remetente_email) }}
           </p>
-          <p class="truncate text-sm text-outline">{{ message().remetente_email }}</p>
+          <p class="truncate text-xs text-text-muted">{{ message().remetente_email }}</p>
         </div>
-        <time class="shrink-0 text-xs text-outline" [attr.datetime]="message().data_criacao">{{
-          formatLongDate(message().data_criacao)
-        }}</time>
+        <div class="flex shrink-0 items-center gap-2 text-xs text-text-muted">
+          @if (message().outlook_message_id) {
+            <span class="inline-flex items-center gap-1 text-accent"
+              ><span class="material-symbols-outlined text-sm" aria-hidden="true">mail</span
+              >Outlook</span
+            >
+          }
+          <time [attr.datetime]="message().data_criacao">{{
+            formatLongDate(message().data_criacao)
+          }}</time>
+        </div>
       </header>
-      <p
-        class="whitespace-pre-wrap break-words text-sm leading-6 text-on-surface-variant md:text-base"
-      >
+      <p class="whitespace-pre-wrap break-words text-[15px] leading-6 text-text-secondary">
         {{ message().corpo_mensagem }}
       </p>
     </div>
   </article>
 } @else {
-  <article class="flex flex-row-reverse items-start gap-3 md:gap-4">
+  <article
+    class="message-enter ml-auto flex w-[94%] flex-row-reverse items-start gap-3 sm:w-[88%] sm:gap-4"
+  >
     <div
-      class="flex size-10 shrink-0 items-center justify-center rounded-full border border-primary/20 bg-primary text-xs font-bold text-white"
+      class="flex size-9 shrink-0 items-center justify-center rounded-lg bg-accent-soft text-xs font-bold text-accent"
     >
-      HD
+      SD
     </div>
-    <div
-      class="min-w-0 flex-1 rounded-lg rounded-tr-none border border-primary/20 bg-primary-fixed/30 p-4 shadow-sm"
-    >
+    <div class="min-w-0 flex-1 border-r-2 border-accent bg-accent-soft/55 px-4 py-3.5">
       <header
-        class="mb-3 flex flex-col gap-1 border-b border-primary/10 pb-2 sm:flex-row-reverse sm:items-end sm:justify-between"
+        class="mb-3 flex flex-col gap-1 sm:flex-row-reverse sm:items-start sm:justify-between"
       >
         <div class="min-w-0 text-left sm:text-right">
-          <p class="font-semibold text-on-primary-fixed">Equipe de Help Desk</p>
-          <p class="truncate text-sm text-outline">{{ message().remetente_email }}</p>
+          <p class="text-sm font-semibold text-text">Equipe de atendimento</p>
+          <p class="truncate text-xs text-text-muted">{{ message().remetente_email }}</p>
         </div>
-        <time class="shrink-0 text-xs text-outline" [attr.datetime]="message().data_criacao">{{
+        <time class="shrink-0 text-xs text-text-muted" [attr.datetime]="message().data_criacao">{{
           formatLongDate(message().data_criacao)
         }}</time>
       </header>
-      <p
-        class="whitespace-pre-wrap break-words text-sm leading-6 text-on-surface-variant md:text-base"
-      >
+      <p class="whitespace-pre-wrap break-words text-[15px] leading-6 text-text-secondary">
         {{ message().corpo_mensagem }}
       </p>
     </div>

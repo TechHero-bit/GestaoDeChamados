@@ -1,4 +1,5 @@
 import { Component, computed, inject, OnDestroy, OnInit, signal } from '@angular/core';
+import { ActivatedRoute } from '@angular/router';
 import { Subscription, finalize } from 'rxjs';
 import { Ticket, TicketListFilters } from '../../../../core/models/ticket.model';
 import { TicketService } from '../../../../core/services/ticket.service';
@@ -12,13 +13,17 @@ import { TicketTableComponent } from '../../components/ticket-table/ticket-table
 })
 export class TicketListPage implements OnInit, OnDestroy {
   private readonly ticketService = inject(TicketService);
+  private readonly route = inject(ActivatedRoute);
   private request?: Subscription;
 
   readonly tickets = signal<Ticket[]>([]);
   readonly total = signal(0);
   readonly page = signal(1);
   readonly pageSize = 10;
-  readonly filters = signal<TicketListFilters>({});
+  readonly initialSearch = this.route.snapshot.queryParamMap.get('search')?.trim() || '';
+  readonly filters = signal<TicketListFilters>(
+    this.initialSearch ? { search: this.initialSearch } : {},
+  );
   readonly loading = signal(true);
   readonly error = signal('');
   readonly totalPages = computed(() => Math.max(1, Math.ceil(this.total() / this.pageSize)));

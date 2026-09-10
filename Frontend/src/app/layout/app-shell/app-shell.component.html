@@ -1,6 +1,15 @@
-<div class="min-h-dvh bg-surface text-on-surface">
-  <app-sidebar [open]="sidebarOpen()" (closeSidebar)="sidebarOpen.set(false)" />
-  <div class="min-w-0 md:ml-[260px]">
+<div class="min-h-dvh bg-app text-text">
+  <app-sidebar
+    [open]="sidebarOpen()"
+    [collapsed]="sidebarCollapsed()"
+    (closeSidebar)="sidebarOpen.set(false)"
+    (collapseRequested)="toggleSidebar()"
+  />
+  <div
+    class="min-w-0"
+    [class.md:ml-[252px]]="!sidebarCollapsed()"
+    [class.md:ml-[76px]]="sidebarCollapsed()"
+  >
     <app-header (menuRequested)="sidebarOpen.set(true)" />
     <router-outlet />
   </div>

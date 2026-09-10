@@ -1,145 +1,211 @@
 @import 'tailwindcss';
 
 @theme {
-  --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
-  --color-surface: #faf8ff;
-  --color-surface-bright: #faf8ff;
+  --font-sans: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-mono: 'Cascadia Code', 'SFMono-Regular', Consolas, monospace;
+  --text-xs: 0.8125rem;
+  --text-xs--line-height: 1.125rem;
+  --text-sm: 0.9375rem;
+  --text-sm--line-height: 1.375rem;
+  --color-app: #e9eff6;
+  --color-sidebar: #f5f7fa;
+  --color-surface: #ffffff;
+  --color-surface-raised: #ffffff;
+  --color-surface-elevated: #f1f5f9;
+  --color-surface-hover: #e5edf6;
+  --color-border: #c3cfdd;
+  --color-border-subtle: #d4deea;
+  --color-border-strong: #94a3b8;
+  --color-text: #0f172a;
+  --color-text-secondary: #475569;
+  --color-text-muted: #64748b;
+  --color-accent: #2563eb;
+  --color-accent-strong: #1d4ed8;
+  --color-accent-secondary: #0ea5e9;
+  --color-accent-contrast: #ffffff;
+  --color-accent-soft: #e6efff;
+  --color-primary-border: #93c5fd;
+  --color-success: #15803d;
+  --color-success-soft: #e9f8ee;
+  --color-warning: #b45309;
+  --color-warning-soft: #fff4d6;
+  --color-danger: #dc2626;
+  --color-danger-soft: #feecec;
+  --color-surface-bright: #ffffff;
   --color-surface-container-lowest: #ffffff;
-  --color-surface-container-low: #f2f3ff;
-  --color-surface-container: #ecedfa;
-  --color-surface-container-high: #e7e7f4;
-  --color-surface-container-highest: #e1e1ee;
-  --color-surface-variant: #e1e1ee;
-  --color-on-surface: #191b24;
-  --color-on-surface-variant: #424656;
-  --color-on-background: #191b24;
-  --color-inverse-surface: #2e303a;
-  --color-inverse-on-surface: #eff0fd;
-  --color-outline: #737687;
-  --color-outline-variant: #c3c6d8;
-  --color-primary: #004ccd;
-  --color-primary-container: #0f62fe;
-  --color-primary-fixed: #dbe1ff;
-  --color-primary-fixed-dim: #b4c5ff;
+  --color-surface-container-low: #f8fafc;
+  --color-surface-container: #f1f5f9;
+  --color-surface-container-high: #e2e8f0;
+  --color-surface-container-highest: #cbd5e1;
+  --color-surface-variant: #f1f5f9;
+  --color-on-surface: #0f172a;
+  --color-on-surface-variant: #475569;
+  --color-on-background: #0f172a;
+  --color-inverse-surface: #0f172a;
+  --color-inverse-on-surface: #f8fafc;
+  --color-outline: #64748b;
+  --color-outline-variant: #e2e8f0;
+  --color-primary: #2563eb;
+  --color-primary-container: #2563eb;
+  --color-primary-fixed: #eff6ff;
+  --color-primary-fixed-dim: #bfdbfe;
   --color-on-primary: #ffffff;
-  --color-on-primary-fixed: #00174c;
-  --color-secondary-container: #e2dfde;
-  --color-secondary-fixed-dim: #c8c6c5;
-  --color-on-secondary-container: #636262;
-  --color-error: #ba1a1a;
-  --color-error-container: #ffdad6;
-  --color-on-error-container: #93000a;
-  --shadow-card: 0 2px 4px rgb(0 0 0 / 0.05);
+  --color-on-primary-fixed: #1e40af;
+  --color-secondary-container: #f1f5f9;
+  --color-secondary-fixed-dim: #64748b;
+  --color-on-secondary-container: #334155;
+  --color-error: #dc2626;
+  --color-error-container: #fef2f2;
+  --color-on-error-container: #991b1b;
+  --shadow-card: 0 1px 3px rgb(15 23 42 / 0.1), 0 6px 18px rgb(15 23 42 / 0.04);
 }
 
 @layer base {
   * {
     box-sizing: border-box;
   }
-
   html {
     min-width: 320px;
-    background: var(--color-surface);
+    color-scheme: light;
+    background: var(--color-app);
   }
-
   body {
     min-height: 100dvh;
     margin: 0;
-    background: var(--color-surface);
-    color: var(--color-on-surface);
+    background: var(--color-app);
+    color: var(--color-text);
     font-family: var(--font-sans);
     -webkit-font-smoothing: antialiased;
     text-rendering: optimizeLegibility;
   }
-
   button,
   input,
   select,
   textarea {
     font: inherit;
   }
-
+  button,
+  a,
+  label,
+  select {
+    -webkit-tap-highlight-color: transparent;
+  }
   button:focus-visible,
   a:focus-visible,
   input:focus-visible,
   select:focus-visible,
   textarea:focus-visible {
-    outline: 2px solid var(--color-primary);
+    outline: 2px solid var(--color-accent);
     outline-offset: 2px;
+  }
+  ::selection {
+    background: rgb(37 99 235 / 0.18);
+  }
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-thumb {
+    border: 2px solid transparent;
+    border-radius: 999px;
+    background: var(--color-border);
+    background-clip: padding-box;
   }
 }
 
 @layer components {
+  .app-page {
+    @apply mx-auto w-full max-w-[1360px] px-4 py-5 sm:px-6 lg:px-8;
+  }
+  .panel {
+    @apply border border-border-subtle bg-surface-raised shadow-card;
+  }
   .card {
-    @apply rounded-lg border border-outline-variant bg-white shadow-card;
+    @apply rounded-xl border border-border-subtle bg-surface-raised shadow-card;
   }
-
   .card-header {
-    @apply flex items-center gap-2 border-b border-outline-variant bg-surface-container-low p-4;
+    @apply flex items-center gap-3 border-b border-border-subtle px-5 py-4;
   }
-
+  .eyebrow {
+    @apply text-xs font-semibold uppercase tracking-[0.12em] text-accent;
+  }
+  .page-title {
+    @apply text-2xl font-semibold tracking-[-0.025em] text-text sm:text-[1.75rem] sm:leading-9;
+  }
   .nav-item {
-    @apply flex w-full items-center gap-3 rounded px-4 py-3 text-left text-sm text-outline-variant transition-colors;
+    @apply relative flex min-h-11 w-full items-center gap-3 rounded-lg px-3 text-left text-sm font-medium text-text-secondary transition-[color,background-color,transform] duration-150;
   }
-
   .nav-item:not(:disabled):hover {
-    @apply bg-white/10 text-inverse-on-surface;
+    @apply translate-x-0.5 bg-surface-hover text-text;
   }
-
   .nav-item:disabled {
-    @apply cursor-not-allowed opacity-60;
+    @apply cursor-not-allowed opacity-40;
   }
-
   .nav-item-active {
-    @apply rounded-l-none border-l-4 border-primary bg-primary/10 pl-3 text-primary-fixed-dim;
+    @apply bg-accent-soft text-accent;
   }
-
+  .nav-item-active .material-symbols-outlined {
+    @apply text-accent;
+  }
+  .nav-item-active::before {
+    content: '';
+    @apply absolute inset-y-2 left-0 w-0.5 rounded-full bg-accent;
+  }
   .icon-button {
-    @apply inline-flex size-10 items-center justify-center rounded-full text-on-surface-variant transition-colors hover:bg-surface-container-low hover:text-primary disabled:cursor-not-allowed disabled:opacity-50;
+    @apply inline-flex size-10 shrink-0 items-center justify-center rounded-lg text-text-secondary transition-[color,background-color,transform] duration-150 hover:bg-surface-hover hover:text-text active:scale-[0.96] disabled:cursor-not-allowed disabled:opacity-40;
   }
-
   .primary-button {
-    @apply inline-flex items-center gap-2 rounded-lg border border-primary-container bg-primary-container px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-primary hover:shadow disabled:cursor-not-allowed disabled:opacity-60;
+    @apply inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-accent bg-accent px-4 py-2 text-sm font-semibold text-accent-contrast transition-[background-color,transform] duration-150 hover:bg-accent-strong active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50;
   }
-
   .secondary-button {
-    @apply inline-flex items-center justify-center gap-2 rounded-lg border border-outline-variant bg-transparent px-4 py-2 text-sm font-semibold text-on-surface-variant transition hover:border-primary/40 hover:bg-primary-fixed/30 hover:text-primary disabled:cursor-not-allowed disabled:opacity-50;
+    @apply inline-flex min-h-10 items-center justify-center gap-2 rounded-lg border border-border bg-surface px-4 py-2 text-sm font-semibold text-text-secondary transition-[border-color,background-color,color,transform] duration-150 hover:border-border-strong hover:bg-surface-hover hover:text-text active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-45;
   }
-
   .ghost-button {
-    @apply inline-flex items-center gap-1 rounded px-2 py-1.5 text-sm text-on-surface-variant transition hover:bg-surface-container-low hover:text-primary disabled:cursor-not-allowed disabled:opacity-50;
+    @apply inline-flex min-h-9 items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-sm font-medium text-text-secondary transition-[background-color,color] duration-150 hover:bg-surface-hover hover:text-text disabled:cursor-not-allowed disabled:opacity-40;
   }
-
   .toolbar-button {
-    @apply inline-flex size-8 items-center justify-center rounded text-on-surface-variant transition hover:bg-surface-variant disabled:cursor-not-allowed disabled:opacity-45;
+    @apply inline-flex size-9 shrink-0 cursor-pointer items-center justify-center rounded-lg text-text-muted transition-[background-color,color,transform] duration-150 hover:bg-surface-hover hover:text-text active:scale-[0.96] disabled:cursor-not-allowed disabled:opacity-40;
   }
-
   .pagination-button {
-    @apply inline-flex size-9 items-center justify-center rounded border border-outline-variant bg-white text-on-surface-variant transition hover:border-primary hover:text-primary disabled:cursor-not-allowed disabled:opacity-40;
+    @apply inline-flex size-9 items-center justify-center rounded-lg border border-border bg-surface-elevated text-text-secondary transition-[border-color,background-color,color,transform] duration-150 hover:border-accent/60 hover:bg-accent-soft hover:text-accent active:scale-[0.96] disabled:cursor-not-allowed disabled:opacity-35;
   }
-
   .field-label {
-    @apply mb-2 block text-xs font-semibold uppercase tracking-[0.05em] text-on-surface-variant;
+    @apply mb-2 block text-xs font-semibold uppercase tracking-[0.08em] text-text-muted;
   }
-
   .field-control {
-    @apply w-full border-0 border-b border-outline-variant bg-transparent py-2 pr-2 text-sm text-on-surface outline-none transition focus:border-primary focus:ring-0;
+    @apply min-h-10 w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text outline-none transition-[border-color,box-shadow] duration-150 placeholder:text-text-muted focus:border-accent focus:ring-2 focus:ring-accent/15;
   }
-
-  .status-badge {
+  .status-badge,
+  .priority-badge {
     @apply inline-flex items-center gap-1.5 whitespace-nowrap rounded-full border px-2.5 py-1 text-xs font-semibold;
   }
-
   .table-heading {
-    @apply px-6 py-4 text-xs font-semibold uppercase tracking-wider text-on-surface-variant;
+    @apply px-4 py-3 text-xs font-semibold uppercase tracking-[0.08em] text-text-muted;
   }
-
   .table-cell {
-    @apply px-6 py-4 align-middle;
+    @apply px-4 py-3 align-middle;
   }
-
   .skeleton {
-    @apply animate-pulse rounded bg-surface-container-highest;
+    @apply rounded bg-surface-elevated;
+  }
+  .feedback {
+    @apply flex items-start gap-3 rounded-lg border px-4 py-3 text-sm;
+  }
+  .side-section {
+    @apply border-b border-border-subtle px-5 py-4 last:border-b-0;
+  }
+  .settings-nav-item {
+    @apply relative flex min-h-11 items-center justify-center gap-2 rounded-lg border border-transparent px-3 text-sm font-medium text-text-secondary transition-[background-color,border-color,color,transform] duration-150 hover:bg-surface-hover hover:text-text active:scale-[0.98] lg:justify-start;
+  }
+  .settings-nav-item-active {
+    @apply border-primary-border bg-accent-soft text-accent;
+  }
+  .settings-nav-item-active::before {
+    content: '';
+    @apply absolute bottom-0 left-3 right-3 h-0.5 rounded-full bg-accent lg:bottom-2 lg:left-0 lg:right-auto lg:top-2 lg:h-auto lg:w-0.5;
+  }
+  .settings-nav-item-active .material-symbols-outlined {
+    @apply text-accent;
   }
 }
 
@@ -150,4 +216,59 @@
     'GRAD' 0,
     'opsz' 24;
   line-height: 1;
+}
+
+.page-enter {
+  animation: page-enter 180ms ease-out both;
+}
+
+.content-enter {
+  animation: content-enter 160ms ease-out both;
+}
+
+.message-enter {
+  animation: message-enter 180ms ease-out both;
+}
+
+.feedback-enter {
+  animation: feedback-enter 160ms ease-out both;
+}
+
+@keyframes page-enter {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+
+@keyframes content-enter {
+  from {
+    opacity: 0;
+    transform: translateY(3px);
+  }
+}
+
+@keyframes message-enter {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+
+@keyframes feedback-enter {
+  from {
+    opacity: 0;
+    transform: translateY(-2px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }

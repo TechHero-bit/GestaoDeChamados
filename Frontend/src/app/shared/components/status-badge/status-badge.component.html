@@ -1,20 +1,17 @@
 @switch (status()) {
   @case ('Aberto') {
-    <span class="status-badge border-primary-fixed-dim bg-primary-fixed text-on-primary-fixed">
-      <span class="size-1.5 rounded-full bg-primary" aria-hidden="true"></span>
-      Aberto
+    <span class="status-badge border-accent/25 bg-accent-soft text-accent">
+      <span class="size-1.5 rounded-full bg-accent" aria-hidden="true"></span>Aberto
     </span>
   }
   @case ('Em Andamento') {
-    <span class="status-badge border-[#FFE0B2] bg-[#FFF3E0] text-[#E65100]">
-      <span class="size-1.5 rounded-full bg-[#E65100]" aria-hidden="true"></span>
-      Em Andamento
+    <span class="status-badge border-warning/25 bg-warning-soft text-warning">
+      <span class="size-1.5 rounded-full bg-warning" aria-hidden="true"></span>Em andamento
     </span>
   }
   @case ('Resolvido') {
-    <span class="status-badge border-[#C8E6C9] bg-[#E8F5E9] text-[#2E7D32]">
-      <span class="size-1.5 rounded-full bg-[#2E7D32]" aria-hidden="true"></span>
-      Resolvido
+    <span class="status-badge border-success/25 bg-success-soft text-success">
+      <span class="size-1.5 rounded-full bg-success" aria-hidden="true"></span>Resolvido
     </span>
   }
 }

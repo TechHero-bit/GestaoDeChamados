@@ -1,97 +1,124 @@
 @if (open()) {
   <button
     type="button"
-    class="fixed inset-0 z-40 bg-black/40 md:hidden"
+    class="fixed inset-0 z-40 bg-inverse-surface/30 md:hidden"
     aria-label="Fechar menu"
     (click)="closeSidebar.emit()"
   ></button>
 }
 
 <aside
-  class="fixed inset-y-0 left-0 z-50 flex w-[260px] flex-col bg-inverse-surface py-6 text-inverse-on-surface shadow-xl transition-transform duration-200 md:translate-x-0 md:shadow-none"
+  class="fixed inset-y-0 left-0 z-50 flex w-[252px] flex-col border-r border-border-subtle bg-sidebar px-3 py-4 text-text shadow-card transition-transform duration-200 md:translate-x-0 md:shadow-none"
   [class.-translate-x-full]="!open()"
   [class.translate-x-0]="open()"
+  [class.md:w-[76px]]="collapsed()"
 >
-  <div class="mb-8 flex items-center gap-3 px-6">
+  <div class="flex h-12 items-center gap-3 px-2">
     <div
-      class="flex size-10 shrink-0 items-center justify-center rounded bg-primary-container text-white shadow-sm"
+      class="flex size-9 shrink-0 items-center justify-center rounded-lg bg-accent text-accent-contrast"
     >
-      <span class="material-symbols-outlined" aria-hidden="true">headset_mic</span>
+      <span class="material-symbols-outlined text-[21px]" aria-hidden="true">support_agent</span>
     </div>
-    <div class="min-w-0">
-      <p class="truncate text-lg font-bold">IT Helpdesk</p>
-      <p class="text-[11px] font-semibold uppercase tracking-[0.08em] text-secondary-fixed-dim">
-        Outlook Integrated
+    <div class="min-w-0" [class.md:hidden]="collapsed()">
+      <p class="truncate text-[17px] font-semibold tracking-[-0.02em]">SmartDesk</p>
+      <p class="truncate text-[11px] font-medium uppercase tracking-[0.12em] text-text-muted">
+        Service workspace
       </p>
     </div>
     <button
       type="button"
-      class="ml-auto rounded p-1 text-outline-variant hover:bg-white/10 md:hidden"
+      class="icon-button ml-auto md:hidden"
       aria-label="Fechar menu"
       (click)="closeSidebar.emit()"
     >
-      <span class="material-symbols-outlined" aria-hidden="true">close</span>
+      <span class="material-symbols-outlined text-xl" aria-hidden="true">close</span>
     </button>
   </div>
 
-  <nav class="flex-1 space-y-1 px-2" aria-label="Navegação principal">
-    <button
-      class="nav-item"
-      type="button"
-      disabled
-      title="Dashboard previsto para uma próxima fase"
-    >
-      <span class="material-symbols-outlined" aria-hidden="true">dashboard</span>
-      <span>Dashboard</span>
-    </button>
+  <div class="my-5 h-px bg-border-subtle"></div>
 
+  <nav class="flex-1 space-y-1" aria-label="Navegação principal">
+    <a
+      class="nav-item"
+      routerLink="/dashboard"
+      routerLinkActive="nav-item-active"
+      [routerLinkActiveOptions]="{ exact: true }"
+      (click)="closeSidebar.emit()"
+      title="Visão geral"
+    >
+      <span class="material-symbols-outlined shrink-0 text-[21px]" aria-hidden="true"
+        >dashboard</span
+      >
+      <span [class.md:hidden]="collapsed()">Dashboard</span>
+    </a>
     <a
       class="nav-item"
       routerLink="/tickets"
       routerLinkActive="nav-item-active"
       (click)="closeSidebar.emit()"
+      title="Fila de chamados"
     >
-      <span class="material-symbols-outlined" aria-hidden="true">confirmation_number</span>
-      <span>Tickets</span>
+      <span class="material-symbols-outlined shrink-0 text-[21px]" aria-hidden="true">inbox</span>
+      <span [class.md:hidden]="collapsed()">Chamados</span>
     </a>
-
-    <button
-      class="nav-item"
-      type="button"
-      disabled
-      title="Relatórios previstos para uma próxima fase"
-    >
-      <span class="material-symbols-outlined" aria-hidden="true">assessment</span>
-      <span>Relatórios</span>
-    </button>
-
     <a
       class="nav-item"
-      routerLink="/settings/integrations"
+      routerLink="/reports"
+      routerLinkActive="nav-item-active"
+      [routerLinkActiveOptions]="{ exact: true }"
+      (click)="closeSidebar.emit()"
+      title="Relatórios"
+    >
+      <span class="material-symbols-outlined shrink-0 text-[21px]" aria-hidden="true"
+        >bar_chart</span
+      >
+      <span [class.md:hidden]="collapsed()">Relatórios</span>
+    </a>
+    <a
+      class="nav-item"
+      routerLink="/settings"
       routerLinkActive="nav-item-active"
       (click)="closeSidebar.emit()"
+      title="Configurações"
     >
-      <span class="material-symbols-outlined" aria-hidden="true">settings</span>
-      <span>Configurações</span>
+      <span class="material-symbols-outlined shrink-0 text-[21px]" aria-hidden="true">tune</span>
+      <span [class.md:hidden]="collapsed()">Configurações</span>
     </a>
   </nav>
 
-  <div class="border-t border-white/10 px-2 pt-4 space-y-1">
+  <div class="space-y-2 border-t border-border-subtle pt-4">
     @if (currentUser()) {
-      <div class="px-4 py-2 text-xs">
-        <p class="truncate font-semibold text-inverse-on-surface">{{ currentUser()?.nome }}</p>
-        <p class="truncate text-outline-variant text-[11px]">{{ currentUser()?.email }}</p>
+      <div class="flex items-center gap-3 rounded-lg px-2 py-2" [title]="currentUser()?.nome">
+        <div
+          class="flex size-9 shrink-0 items-center justify-center rounded-lg bg-surface-elevated text-xs font-bold text-accent"
+        >
+          {{ (currentUser()?.nome || 'SD').slice(0, 2).toUpperCase() }}
+        </div>
+        <div class="min-w-0" [class.md:hidden]="collapsed()">
+          <p class="truncate text-sm font-semibold text-text">{{ currentUser()?.nome }}</p>
+          <p class="truncate text-xs text-text-muted">{{ currentUser()?.email }}</p>
+        </div>
       </div>
     }
-
+    <button class="nav-item" type="button" (click)="onLogout()" title="Encerrar sessão">
+      <span class="material-symbols-outlined shrink-0 text-[21px] text-danger" aria-hidden="true"
+        >logout</span
+      >
+      <span [class.md:hidden]="collapsed()">Sair</span>
+    </button>
     <button
-      class="nav-item text-red-300 hover:bg-red-500/10 hover:text-red-200"
+      class="nav-item hidden md:flex"
       type="button"
-      (click)="onLogout()"
-      title="Encerrar sessão"
+      (click)="collapseRequested.emit()"
+      [attr.aria-label]="collapsed() ? 'Expandir barra lateral' : 'Recolher barra lateral'"
+      [title]="collapsed() ? 'Expandir barra lateral' : 'Recolher barra lateral'"
     >
-      <span class="material-symbols-outlined" aria-hidden="true">logout</span>
-      <span>Sair</span>
+      <span class="material-symbols-outlined shrink-0 text-[21px]" aria-hidden="true">{{
+        collapsed() ? 'right_panel_open' : 'left_panel_close'
+      }}</span>
+      @if (!collapsed()) {
+        <span>Recolher menu</span>
+      }
     </button>
   </div>
 </aside>

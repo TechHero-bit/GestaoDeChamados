@@ -1,59 +1,68 @@
-<main class="mx-auto w-full max-w-[1440px] p-4 md:p-6">
-  <div class="mb-6 flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-center">
+<main class="app-page page-enter">
+  <div class="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
     <div>
-      <h2 class="text-2xl font-bold tracking-tight text-on-surface md:text-[32px] md:leading-10">
-        Fila de Atendimento
-      </h2>
-      <p class="mt-1 text-sm text-on-surface-variant">
-        Gerencie e priorize os chamados recebidos pelo Outlook.
+      <p class="eyebrow mb-1.5">Operação</p>
+      <h1 class="page-title">Fila de atendimento</h1>
+      <p class="mt-1 text-sm text-text-secondary">
+        Chamados recebidos pelo Outlook, organizados para triagem rápida.
       </p>
     </div>
-    <button
-      type="button"
-      class="primary-button"
-      disabled
-      title="Os e-mails são sincronizados automaticamente pelo Power Automate"
+    <div
+      class="flex items-center gap-2 rounded-lg border border-border-subtle bg-surface px-3 py-2 text-sm text-text-secondary"
     >
-      <span class="material-symbols-outlined text-xl" aria-hidden="true">sync</span>
-      Sincronização automática
-    </button>
+      <span class="material-symbols-outlined text-lg text-accent" aria-hidden="true">sync</span>
+      <span>Sincronização automática</span>
+      <span class="size-1.5 rounded-full bg-success" aria-label="Ativa"></span>
+    </div>
   </div>
 
-  <app-ticket-filters (filtersChanged)="onFiltersChanged($event)" />
+  <app-ticket-filters [initialSearch]="initialSearch" (filtersChanged)="onFiltersChanged($event)" />
 
   @if (error()) {
     <div
-      class="mb-4 flex flex-col items-start justify-between gap-3 rounded-lg border border-error/30 bg-error-container p-4 text-on-error-container sm:flex-row sm:items-center"
+      class="feedback feedback-enter mb-4 border-danger/30 bg-danger-soft text-on-error-container"
       role="alert"
     >
-      <div class="flex items-start gap-2">
-        <span class="material-symbols-outlined" aria-hidden="true">error</span>
-        <div>
-          <p class="font-semibold">Não foi possível carregar os chamados</p>
-          <p class="text-sm">{{ error() }}</p>
-        </div>
+      <span class="material-symbols-outlined text-danger" aria-hidden="true">error</span>
+      <div class="min-w-0 flex-1">
+        <p class="font-semibold">Não foi possível carregar os chamados</p>
+        <p class="mt-0.5 text-text-secondary">{{ error() }}</p>
       </div>
-      <button
-        type="button"
-        class="secondary-button border-error/40 text-on-error-container"
-        (click)="loadTickets()"
-      >
+      <button type="button" class="secondary-button shrink-0" (click)="loadTickets()">
         Tentar novamente
       </button>
     </div>
   }
 
-  <section class="card overflow-hidden" aria-labelledby="tickets-table-title">
-    <h3 id="tickets-table-title" class="sr-only">Chamados encontrados</h3>
+  <section
+    class="content-enter overflow-hidden rounded-xl border border-border-subtle bg-surface-raised shadow-card"
+    aria-labelledby="tickets-table-title"
+  >
+    <div class="flex items-center justify-between border-b border-border-subtle px-4 py-3 sm:px-5">
+      <div>
+        <h2 id="tickets-table-title" class="text-sm font-semibold text-text">
+          Chamados encontrados
+        </h2>
+        <p class="mt-0.5 text-xs text-text-muted" aria-live="polite">
+          {{ total() }} {{ total() === 1 ? 'registro' : 'registros' }}
+        </p>
+      </div>
+      @if (loading()) {
+        <span class="flex items-center gap-2 text-xs text-text-muted" role="status">
+          <span class="material-symbols-outlined animate-spin text-base" aria-hidden="true"
+            >progress_activity</span
+          >Atualizando
+        </span>
+      }
+    </div>
     <app-ticket-table [tickets]="tickets()" [loading]="loading()" />
-
     <footer
-      class="flex flex-col items-center justify-between gap-3 border-t border-outline-variant bg-surface-container-low/40 px-4 py-3 text-sm text-on-surface-variant sm:flex-row sm:px-6"
+      class="flex flex-col items-center justify-between gap-3 border-t border-border-subtle px-4 py-3 text-sm text-text-secondary sm:flex-row sm:px-5"
     >
-      <p aria-live="polite">
+      <p>
         Mostrando
-        <span class="font-semibold text-on-surface">{{ startIndex() }}–{{ endIndex() }}</span> de
-        <span class="font-semibold text-on-surface">{{ total() }}</span>
+        <span class="font-semibold text-text">{{ startIndex() }}–{{ endIndex() }}</span> de
+        <span class="font-semibold text-text">{{ total() }}</span>
       </p>
       <div class="flex items-center gap-2">
         <button
@@ -65,7 +74,7 @@
         >
           <span class="material-symbols-outlined" aria-hidden="true">chevron_left</span>
         </button>
-        <span class="min-w-24 text-center">Página {{ page() }} de {{ totalPages() }}</span>
+        <span class="min-w-24 text-center text-xs">Página {{ page() }} de {{ totalPages() }}</span>
         <button
           type="button"
           class="pagination-button"

@@ -13,6 +13,7 @@ import { SidebarComponent } from '../sidebar/sidebar.component';
 export class AppShellComponent implements OnInit, OnDestroy {
   private readonly idleService = inject(IdleService);
   readonly sidebarOpen = signal(false);
+  readonly sidebarCollapsed = signal(this.readSidebarPreference());
 
   ngOnInit(): void {
     this.idleService.startMonitoring();
@@ -20,5 +21,25 @@ export class AppShellComponent implements OnInit, OnDestroy {
 
   ngOnDestroy(): void {
     this.idleService.stopMonitoring();
+  }
+
+  toggleSidebar(): void {
+    this.sidebarCollapsed.update((collapsed) => {
+      const next = !collapsed;
+      try {
+        localStorage.setItem('helpdesk:sidebar_collapsed', String(next));
+      } catch {
+        // A preferência é opcional quando o storage não está disponível.
+      }
+      return next;
+    });
+  }
+
+  private readSidebarPreference(): boolean {
+    try {
+      return localStorage.getItem('helpdesk:sidebar_collapsed') === 'true';
+    } catch {
+      return false;
+    }
   }
 }

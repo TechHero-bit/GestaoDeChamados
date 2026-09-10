@@ -1,0 +1,451 @@
+<main class="app-page page-enter">
+  <div class="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+    <div>
+      <p class="eyebrow mb-1.5">Análise operacional</p>
+      <h1 class="page-title">Relatórios</h1>
+      <p class="mt-1 text-sm text-text-secondary">
+        Visualize a evolução do atendimento por período, status e prioridade.
+      </p>
+    </div>
+    @if (totalAvailable() > tickets().length) {
+      <p class="rounded-lg border border-border bg-surface px-3 py-2 text-xs text-text-muted">
+        Base visual: 100 chamados mais recentes
+      </p>
+    }
+  </div>
+
+  <section class="card content-enter mb-3 p-3" aria-label="Filtros do relatório">
+    <form
+      class="grid gap-2.5 md:grid-cols-2 xl:grid-cols-[170px_170px_190px_190px_auto]"
+      (ngSubmit)="applyFilters()"
+    >
+      <div>
+        <label class="field-label" for="report-start-date">Data inicial</label>
+        <input
+          id="report-start-date"
+          class="field-control"
+          type="date"
+          name="startDate"
+          [(ngModel)]="startDate"
+        />
+      </div>
+      <div>
+        <label class="field-label" for="report-end-date">Data final</label>
+        <input
+          id="report-end-date"
+          class="field-control"
+          type="date"
+          name="endDate"
+          [(ngModel)]="endDate"
+        />
+      </div>
+      <div>
+        <label class="field-label" for="report-status">Status</label>
+        <select id="report-status" class="field-control" name="status" [(ngModel)]="status">
+          <option value="">Todos os status</option>
+          <option value="Aberto">Aberto</option>
+          <option value="Em Andamento">Em andamento</option>
+          <option value="Resolvido">Resolvido</option>
+        </select>
+      </div>
+      <div>
+        <label class="field-label" for="report-priority">Prioridade</label>
+        <select id="report-priority" class="field-control" name="priority" [(ngModel)]="priority">
+          <option value="">Todas as prioridades</option>
+          <option value="Baixa">Baixa</option>
+          <option value="Normal">Normal</option>
+          <option value="Alta">Alta</option>
+        </select>
+      </div>
+      <div class="flex items-end gap-2">
+        <button class="primary-button flex-1" type="submit">
+          <span class="material-symbols-outlined text-lg" aria-hidden="true">filter_alt</span>
+          Aplicar filtros
+        </button>
+        <button
+          class="icon-button border border-border bg-surface"
+          type="button"
+          title="Limpar filtros"
+          aria-label="Limpar filtros"
+          (click)="resetFilters()"
+        >
+          <span class="material-symbols-outlined text-lg" aria-hidden="true">filter_alt_off</span>
+        </button>
+      </div>
+    </form>
+  </section>
+
+  @if (error()) {
+    <div
+      class="feedback feedback-enter mb-3 border-danger/30 bg-danger-soft text-on-error-container"
+      role="alert"
+    >
+      <span class="material-symbols-outlined text-danger" aria-hidden="true">error</span>
+      <div class="min-w-0 flex-1">
+        <p class="font-semibold">Não foi possível carregar o relatório</p>
+        <p class="mt-0.5 text-text-secondary">{{ error() }}</p>
+      </div>
+      <button class="secondary-button shrink-0" type="button" (click)="loadReport()">
+        Tentar novamente
+      </button>
+    </div>
+  }
+
+  <section class="mb-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-4" aria-label="Resumo do período">
+    <article class="card content-enter overflow-hidden">
+      <div class="h-1 bg-accent"></div>
+      <div class="p-4">
+        <div class="flex items-center justify-between gap-3">
+          <p class="text-sm font-medium text-text-secondary">Chamados no período</p>
+          <span class="material-symbols-outlined text-xl text-accent" aria-hidden="true"
+            >confirmation_number</span
+          >
+        </div>
+        @if (loading()) {
+          <span class="skeleton mt-3 block h-8 w-20"></span>
+        } @else {
+          <p class="mt-2 text-3xl font-semibold tracking-[-0.035em] text-text">
+            {{ filteredTickets().length }}
+          </p>
+        }
+      </div>
+    </article>
+    <article class="card content-enter overflow-hidden">
+      <div class="h-1 bg-warning"></div>
+      <div class="p-4">
+        <div class="flex items-center justify-between gap-3">
+          <p class="text-sm font-medium text-text-secondary">Aguardando conclusão</p>
+          <span class="material-symbols-outlined text-xl text-warning" aria-hidden="true"
+            >pending_actions</span
+          >
+        </div>
+        @if (loading()) {
+          <span class="skeleton mt-3 block h-8 w-20"></span>
+        } @else {
+          <p class="mt-2 text-3xl font-semibold tracking-[-0.035em] text-text">
+            {{ openCount() + inProgressCount() }}
+          </p>
+        }
+      </div>
+    </article>
+    <article class="card content-enter overflow-hidden">
+      <div class="h-1 bg-success"></div>
+      <div class="p-4">
+        <div class="flex items-center justify-between gap-3">
+          <p class="text-sm font-medium text-text-secondary">Resolvidos</p>
+          <span class="material-symbols-outlined text-xl text-success" aria-hidden="true"
+            >task_alt</span
+          >
+        </div>
+        @if (loading()) {
+          <span class="skeleton mt-3 block h-8 w-20"></span>
+        } @else {
+          <p class="mt-2 text-3xl font-semibold tracking-[-0.035em] text-text">
+            {{ resolvedCount() }}
+          </p>
+        }
+      </div>
+    </article>
+    <article class="card content-enter overflow-hidden">
+      <div class="h-1 bg-accent-secondary"></div>
+      <div class="p-4">
+        <div class="flex items-center justify-between gap-3">
+          <p class="text-sm font-medium text-text-secondary">Taxa de resolução</p>
+          <span class="material-symbols-outlined text-xl text-accent-secondary" aria-hidden="true"
+            >monitoring</span
+          >
+        </div>
+        @if (loading()) {
+          <span class="skeleton mt-3 block h-8 w-20"></span>
+        } @else {
+          <p class="mt-2 text-3xl font-semibold tracking-[-0.035em] text-text">
+            {{ resolutionRate() }}%
+          </p>
+        }
+      </div>
+    </article>
+  </section>
+
+  <div class="grid items-start gap-3 xl:grid-cols-[minmax(0,1fr)_340px]">
+    <section class="card content-enter overflow-hidden" aria-labelledby="trend-title">
+      <div class="card-header flex-wrap justify-between">
+        <div>
+          <h2 id="trend-title" class="font-semibold text-text">Volume de chamados</h2>
+          <p id="trend-description" class="mt-0.5 text-xs text-text-muted">
+            Chamados recebidos e resolvidos nas datas selecionadas
+          </p>
+        </div>
+        <div
+          class="flex flex-wrap items-center gap-4 text-xs text-text-secondary"
+          aria-hidden="true"
+        >
+          <span class="flex items-center gap-2">
+            <span class="size-2.5 rounded-full bg-accent"></span>Recebidos
+          </span>
+          <span class="flex items-center gap-2">
+            <span class="size-2.5 rounded-full bg-success"></span>Resolvidos
+          </span>
+        </div>
+      </div>
+
+      @if (loading()) {
+        <div class="p-5" aria-label="Carregando gráfico de volume">
+          <div class="skeleton h-[340px] w-full"></div>
+        </div>
+      } @else if (trendChart().points.length > 0) {
+        <div class="px-3 pb-3 pt-5 sm:px-5">
+          <svg
+            class="min-h-[300px] w-full overflow-visible"
+            viewBox="0 0 760 300"
+            preserveAspectRatio="xMidYMid meet"
+            role="img"
+            aria-labelledby="trend-title trend-description"
+          >
+            @for (grid of trendChart().gridLines; track grid.y) {
+              <line
+                x1="48"
+                x2="742"
+                [attr.y1]="grid.y"
+                [attr.y2]="grid.y"
+                stroke="var(--color-border-subtle)"
+                stroke-width="1"
+              />
+              <text
+                x="38"
+                [attr.y]="grid.y + 4"
+                text-anchor="end"
+                class="text-[11px] text-text-muted"
+                fill="currentColor"
+              >
+                {{ grid.value }}
+              </text>
+            }
+
+            @if (trendChart().areaPath) {
+              <path
+                [attr.d]="trendChart().areaPath"
+                fill="var(--color-accent)"
+                fill-opacity="0.1"
+              />
+            }
+            <path
+              [attr.d]="trendChart().totalPath"
+              fill="none"
+              stroke="var(--color-accent)"
+              stroke-width="3"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              vector-effect="non-scaling-stroke"
+            />
+            <path
+              [attr.d]="trendChart().resolvedPath"
+              fill="none"
+              stroke="var(--color-success)"
+              stroke-width="2.5"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+              stroke-dasharray="7 6"
+              vector-effect="non-scaling-stroke"
+            />
+
+            @for (point of trendChart().points; track point.date) {
+              <circle
+                [attr.cx]="point.x"
+                [attr.cy]="point.yTotal"
+                r="5"
+                fill="var(--color-surface)"
+                stroke="var(--color-accent)"
+                stroke-width="3"
+              >
+                <title>
+                  {{ point.fullLabel }}: {{ point.total }} recebidos,
+                  {{ point.resolved }} resolvidos
+                </title>
+              </circle>
+              <circle
+                [attr.cx]="point.x"
+                [attr.cy]="point.yResolved"
+                r="4"
+                fill="var(--color-surface)"
+                stroke="var(--color-success)"
+                stroke-width="2.5"
+              >
+                <title>{{ point.fullLabel }}: {{ point.resolved }} resolvidos</title>
+              </circle>
+              @if (point.showLabel) {
+                <text
+                  [attr.x]="point.x"
+                  y="284"
+                  text-anchor="middle"
+                  class="text-[11px] font-medium text-text-muted"
+                  fill="currentColor"
+                >
+                  {{ point.label }}
+                </text>
+              }
+            }
+          </svg>
+
+          <ul class="sr-only">
+            @for (point of trendChart().points; track point.date) {
+              <li>
+                {{ point.fullLabel }}: {{ point.total }} chamados recebidos e
+                {{ point.resolved }} resolvidos.
+              </li>
+            }
+          </ul>
+        </div>
+      } @else {
+        <div class="flex min-h-[360px] flex-col items-center justify-center px-6 text-center">
+          <span class="material-symbols-outlined mb-3 text-5xl text-text-muted" aria-hidden="true"
+            >query_stats</span
+          >
+          <p class="font-semibold text-text">Sem dados para gerar o gráfico</p>
+          <p class="mt-1 max-w-sm text-sm text-text-secondary">
+            Ajuste o período ou remova alguns filtros para ampliar a análise.
+          </p>
+        </div>
+      }
+    </section>
+
+    <div class="space-y-3">
+      <section class="card content-enter overflow-hidden" aria-labelledby="status-chart-title">
+        <div class="card-header">
+          <span
+            class="flex size-9 items-center justify-center rounded-lg bg-accent-soft text-accent"
+          >
+            <span class="material-symbols-outlined text-xl" aria-hidden="true">donut_small</span>
+          </span>
+          <div>
+            <h2 id="status-chart-title" class="font-semibold text-text">Status da fila</h2>
+            <p class="mt-0.5 text-xs text-text-muted">Composição do período</p>
+          </div>
+        </div>
+
+        @if (loading()) {
+          <div class="flex items-center gap-5 p-5">
+            <div class="skeleton size-36 shrink-0 rounded-full"></div>
+            <div class="flex-1 space-y-3">
+              <div class="skeleton h-4 w-full"></div>
+              <div class="skeleton h-4 w-4/5"></div>
+              <div class="skeleton h-4 w-3/4"></div>
+            </div>
+          </div>
+        } @else {
+          <div class="flex flex-col items-center gap-5 p-5 sm:flex-row xl:flex-col">
+            <div class="relative size-40 shrink-0">
+              <svg
+                class="size-full -rotate-90"
+                viewBox="0 0 120 120"
+                role="img"
+                aria-labelledby="status-chart-title"
+              >
+                <circle
+                  cx="60"
+                  cy="60"
+                  r="46"
+                  fill="none"
+                  stroke="var(--color-surface-elevated)"
+                  stroke-width="14"
+                />
+                @for (segment of statusDistribution(); track segment.label) {
+                  <circle
+                    cx="60"
+                    cy="60"
+                    r="46"
+                    fill="none"
+                    [attr.stroke]="segment.color"
+                    stroke-width="14"
+                    pathLength="100"
+                    [attr.stroke-dasharray]="segment.percentage + ' ' + (100 - segment.percentage)"
+                    [attr.stroke-dashoffset]="-segment.offset"
+                  >
+                    <title>
+                      {{ segment.label }}: {{ segment.value }} chamados ({{
+                        segment.percentage.toFixed(0)
+                      }}%)
+                    </title>
+                  </circle>
+                }
+              </svg>
+              <div class="absolute inset-0 flex flex-col items-center justify-center">
+                <span class="text-3xl font-semibold tracking-[-0.035em] text-text">{{
+                  filteredTickets().length
+                }}</span>
+                <span class="text-xs text-text-muted">chamados</span>
+              </div>
+            </div>
+
+            <div class="w-full space-y-3">
+              @for (segment of statusDistribution(); track segment.label) {
+                <div class="flex items-center justify-between gap-3 text-sm">
+                  <span class="flex min-w-0 items-center gap-2 text-text-secondary">
+                    <span
+                      class="size-2.5 shrink-0 rounded-full"
+                      [style.background-color]="segment.color"
+                    ></span>
+                    <span class="truncate">{{ segment.label }}</span>
+                  </span>
+                  <span class="font-semibold text-text">
+                    {{ segment.value }}
+                    <span class="ml-1 text-xs font-normal text-text-muted"
+                      >{{ segment.percentage.toFixed(0) }}%</span
+                    >
+                  </span>
+                </div>
+              }
+            </div>
+          </div>
+        }
+      </section>
+
+      <section class="card content-enter overflow-hidden" aria-labelledby="priority-chart-title">
+        <div class="card-header">
+          <span
+            class="flex size-9 items-center justify-center rounded-lg bg-warning-soft text-warning"
+          >
+            <span class="material-symbols-outlined text-xl" aria-hidden="true">priority_high</span>
+          </span>
+          <div>
+            <h2 id="priority-chart-title" class="font-semibold text-text">Prioridades</h2>
+            <p class="mt-0.5 text-xs text-text-muted">Distribuição dos chamados</p>
+          </div>
+        </div>
+        <div class="space-y-4 p-5">
+          @if (loading()) {
+            @for (row of [1, 2, 3]; track row) {
+              <div>
+                <div class="skeleton mb-2 h-4 w-28"></div>
+                <div class="skeleton h-2.5 w-full rounded-full"></div>
+              </div>
+            }
+          } @else {
+            @for (item of priorityDistribution(); track item.label) {
+              <div>
+                <div class="mb-2 flex items-center justify-between gap-3 text-sm">
+                  <span class="font-medium text-text-secondary">{{ item.label }}</span>
+                  <span class="font-semibold text-text">
+                    {{ item.value }}
+                    <span class="ml-1 text-xs font-normal text-text-muted"
+                      >{{ item.percentage }}%</span
+                    >
+                  </span>
+                </div>
+                <div
+                  class="h-2.5 overflow-hidden rounded-full"
+                  [style.background-color]="item.softColor"
+                >
+                  <div
+                    class="h-full rounded-full transition-[width] duration-200"
+                    [style.background-color]="item.color"
+                    [style.width.%]="item.percentage"
+                  ></div>
+                </div>
+              </div>
+            }
+          }
+        </div>
+      </section>
+    </div>
+  </div>
+</main>

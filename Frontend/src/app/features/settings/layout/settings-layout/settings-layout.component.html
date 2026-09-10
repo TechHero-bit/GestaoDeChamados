@@ -1,0 +1,51 @@
+<main class="app-page page-enter">
+  <div class="mb-4">
+    <p class="eyebrow mb-1.5">Preferências</p>
+    <h1 class="page-title">Configurações</h1>
+    <p class="mt-1.5 text-sm text-text-secondary">
+      Gerencie seu perfil, a conexão com o Outlook e a assinatura das respostas.
+    </p>
+  </div>
+
+  <div class="grid items-start gap-4 lg:grid-cols-[208px_minmax(0,920px)] lg:justify-center">
+    <nav
+      class="content-enter grid grid-cols-3 gap-1 rounded-xl border border-border-subtle bg-surface-raised p-2 lg:sticky lg:top-20 lg:block lg:space-y-1"
+      aria-label="Seções das configurações"
+    >
+      <a
+        class="settings-nav-item"
+        routerLink="/settings/profile"
+        routerLinkActive="settings-nav-item-active"
+        [routerLinkActiveOptions]="{ exact: true }"
+        ariaCurrentWhenActive="page"
+      >
+        <span class="material-symbols-outlined text-xl" aria-hidden="true">person</span>
+        <span>Perfil</span>
+      </a>
+      <a
+        class="settings-nav-item"
+        routerLink="/settings/integrations"
+        routerLinkActive="settings-nav-item-active"
+        [routerLinkActiveOptions]="{ exact: true }"
+        ariaCurrentWhenActive="page"
+      >
+        <span class="material-symbols-outlined text-xl" aria-hidden="true">hub</span>
+        <span>Integrações</span>
+      </a>
+      <a
+        class="settings-nav-item"
+        routerLink="/settings/signature"
+        routerLinkActive="settings-nav-item-active"
+        [routerLinkActiveOptions]="{ exact: true }"
+        ariaCurrentWhenActive="page"
+      >
+        <span class="material-symbols-outlined text-xl" aria-hidden="true">draw</span>
+        <span>Assinatura</span>
+      </a>
+    </nav>
+
+    <div class="min-w-0">
+      <router-outlet />
+    </div>
+  </div>
+</main>
