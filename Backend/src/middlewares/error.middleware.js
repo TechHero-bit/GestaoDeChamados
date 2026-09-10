@@ -8,6 +8,17 @@ export function errorMiddleware(err, req, res, _next) {
 
   if (err.microsoftDiagnosticError) {
     const errorCode = err.code || err.publicCode || err.diagnosticCode;
+    const safeAttachmentDebug = err.attachmentDebug && typeof err.attachmentDebug === "object"
+      ? Object.fromEntries([
+          "draft_exists",
+          "draft_sent_before_attachment",
+          "same_draft",
+          "payload_direct_object",
+          "odata_type_matches_signature",
+          "buffer_present",
+          "base64_roundtrip_valid",
+        ].map((key) => [key, err.attachmentDebug[key] === true]))
+      : null;
     const attachmentDetails = errorCode === "GRAPH_ATTACHMENT_FAILED"
       ? {
           graph_status: Number.isInteger(err.graphStatus) ? err.graphStatus : null,
@@ -18,6 +29,7 @@ export function errorMiddleware(err, req, res, _next) {
           attachment_strategy: err.attachmentStrategy === "small" || err.attachmentStrategy === "large"
             ? err.attachmentStrategy
             : "unknown",
+          ...(safeAttachmentDebug ? { attachment_debug: safeAttachmentDebug } : {}),
         }
       : {};
     return res.status(statusCode).json({

@@ -462,7 +462,7 @@ function safeGraphErrorCode(externalCode) {
     : "unknown";
 }
 
-function graphAttachmentError(status, externalCode, attachmentStrategy) {
+function graphAttachmentError(status, externalCode, attachmentStrategy, attachmentDebug) {
   const limitCodes = new Set([
     "ErrorMessageSizeExceeded", "ErrorAttachmentSizeLimitExceeded",
     "RequestEntityTooLarge", "MessageTooBig", "MaximumAttachmentSizeExceeded",
@@ -484,6 +484,7 @@ function graphAttachmentError(status, externalCode, attachmentStrategy) {
       ...(attachmentStrategy === "small" || attachmentStrategy === "large"
         ? { attachmentStrategy }
         : {}),
+      ...(attachmentDebug ? { attachmentDebug } : {}),
     },
   );
 }
@@ -505,10 +506,10 @@ async function acquireDraftToken(userId, getAccessToken) {
   }
 }
 
-async function ensureGraphResponse(response, acceptedStatuses, attachmentStrategy) {
+async function ensureGraphResponse(response, acceptedStatuses, attachmentStrategy, attachmentDebug) {
   if (acceptedStatuses.includes(response.status)) return;
   const code = await readGraphErrorCode(response);
-  throw graphAttachmentError(response.status, code, attachmentStrategy);
+  throw graphAttachmentError(response.status, code, attachmentStrategy, attachmentDebug);
 }
 
 async function graphDraftFetch(fetchImpl, url, options, deliveryUnknown = false) {
@@ -529,6 +530,62 @@ async function graphDraftFetch(fetchImpl, url, options, deliveryUnknown = false)
       },
     );
   }
+}
+
+const FILE_ATTACHMENT_ODATA_TYPE = "#microsoft.graph.fileAttachment";
+
+export function buildMicrosoftFileAttachmentPayload({
+  name,
+  contentType,
+  contentBytes,
+  isInline,
+  contentId,
+}) {
+  return {
+    "@odata.type": FILE_ATTACHMENT_ODATA_TYPE,
+    name,
+    contentType,
+    contentBytes,
+    isInline,
+    ...(isInline && contentId ? { contentId } : {}),
+  };
+}
+
+export function buildSignatureAttachmentPayload({ contentBytes, contentId }) {
+  return buildMicrosoftFileAttachmentPayload({
+    name: "signature.png",
+    contentType: "image/png",
+    contentBytes,
+    isInline: true,
+    contentId,
+  });
+}
+
+export function buildRegularAttachmentPayload({ name, contentType, contentBytes }) {
+  return buildMicrosoftFileAttachmentPayload({
+    name,
+    contentType,
+    contentBytes,
+    isInline: false,
+  });
+}
+
+async function postFileAttachmentToDraft(
+  accessToken,
+  draftId,
+  payload,
+  { fetchImpl, timeoutMs, attachmentStrategy, attachmentDebug } = {},
+) {
+  const response = await graphDraftFetch(fetchImpl,
+    `${GRAPH_MESSAGES_URL}${encodeURIComponent(draftId)}/attachments`,
+    {
+      method: "POST",
+      headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(timeoutMs),
+    },
+  );
+  await ensureGraphResponse(response, [201], attachmentStrategy, attachmentDebug);
 }
 
 export async function createMicrosoftReplyDraft(
@@ -558,17 +615,15 @@ export async function createMicrosoftReplyDraft(
     await ensureGraphResponse(patchResponse, [200]);
 
     if (inlineAttachment) {
-      const signatureResponse = await graphDraftFetch(fetchImpl, `${draftUrl}/attachments`, {
-        method: "POST", headers,
-        body: JSON.stringify({
-          "@odata.type": "#microsoft.graph.fileAttachment",
-          name: "signature.png", contentType: "image/png",
-          contentId: SIGNATURE_CONTENT_ID, isInline: true,
+      await postFileAttachmentToDraft(
+        accessToken,
+        draft.id,
+        buildSignatureAttachmentPayload({
           contentBytes: inlineAttachment.contentBytes,
+          contentId: SIGNATURE_CONTENT_ID,
         }),
-        signal: AbortSignal.timeout(15000),
-      });
-      await ensureGraphResponse(signatureResponse, [201]);
+        { fetchImpl, timeoutMs: 15000 },
+      );
     }
   } catch (error) {
     try {
@@ -611,25 +666,29 @@ export async function addMicrosoftDraftFileAttachment(
   }
 
   const accessToken = await acquireDraftToken(userId, getAccessToken);
+  const payload = buildRegularAttachmentPayload({
+    name: attachment.name,
+    contentType: attachment.contentType,
+    contentBytes,
+  });
+  const attachmentDebug = {
+    draft_exists: diagnostic.draft_exists,
+    draft_sent_before_attachment: false,
+    same_draft: true,
+    payload_direct_object: true,
+    odata_type_matches_signature: payload["@odata.type"] === FILE_ATTACHMENT_ODATA_TYPE,
+    buffer_present: fileBufferPresent,
+    base64_roundtrip_valid: base64Generated,
+  };
   diagnostic.attachment_request_started = true;
   logAttachmentGraphDiagnostic(diagnostic);
   try {
-    const response = await graphDraftFetch(fetchImpl,
-      `${GRAPH_MESSAGES_URL}${encodeURIComponent(draftId)}/attachments`,
-      {
-        method: "POST",
-        headers: { Authorization: `Bearer ${accessToken}`, "Content-Type": "application/json" },
-        body: JSON.stringify({
-          "@odata.type": "#microsoft.graph.fileAttachment",
-          name: attachment.name,
-          contentType: attachment.contentType,
-          contentBytes,
-          isInline: false,
-        }),
-        signal: AbortSignal.timeout(30000),
-      },
+    await postFileAttachmentToDraft(
+      accessToken,
+      draftId,
+      payload,
+      { fetchImpl, timeoutMs: 30000, attachmentStrategy: "small", attachmentDebug },
     );
-    await ensureGraphResponse(response, [201], "small");
     diagnostic.attachment_created = true;
     logAttachmentGraphDiagnostic(diagnostic);
   } catch (error) {
@@ -681,16 +740,21 @@ export async function createMicrosoftAttachmentUploadSession(
 export async function listMicrosoftDraftAttachments(
   userId,
   draftId,
-  { getAccessToken = getValidMicrosoftAccessToken, fetchImpl = globalThis.fetch } = {},
+  {
+    getAccessToken = getValidMicrosoftAccessToken,
+    fetchImpl = globalThis.fetch,
+    attachmentStrategy,
+    attachmentDebug,
+  } = {},
 ) {
   const accessToken = await acquireDraftToken(userId, getAccessToken);
-  let url = `${GRAPH_MESSAGES_URL}${encodeURIComponent(draftId)}/attachments?$select=id,name,size,contentType,isInline,contentId`;
+  let url = `${GRAPH_MESSAGES_URL}${encodeURIComponent(draftId)}/attachments?$select=id,name,size,contentType,isInline`;
   const attachments = [];
   for (let page = 0; url && page < 10; page += 1) {
     const response = await graphDraftFetch(fetchImpl, url, {
       headers: { Authorization: `Bearer ${accessToken}` }, signal: AbortSignal.timeout(15000),
     });
-    await ensureGraphResponse(response, [200]);
+    await ensureGraphResponse(response, [200], attachmentStrategy, attachmentDebug);
     const data = await readResponseJson(response);
     if (Array.isArray(data.value)) attachments.push(...data.value);
     url = typeof data["@odata.nextLink"] === "string" ? data["@odata.nextLink"] : null;
@@ -701,14 +765,14 @@ export async function listMicrosoftDraftAttachments(
 export async function sendMicrosoftReplyDraft(
   userId,
   draftId,
-  { getAccessToken = getValidMicrosoftAccessToken, fetchImpl = globalThis.fetch } = {},
+  { getAccessToken = getValidMicrosoftAccessToken, fetchImpl = globalThis.fetch, attachmentStrategy } = {},
 ) {
   const accessToken = await acquireDraftToken(userId, getAccessToken);
   const response = await graphDraftFetch(fetchImpl, `${GRAPH_MESSAGES_URL}${encodeURIComponent(draftId)}/send`, {
     method: "POST", headers: { Authorization: `Bearer ${accessToken}` },
     signal: AbortSignal.timeout(30000),
   }, true);
-  await ensureGraphResponse(response, [202]);
+  await ensureGraphResponse(response, [202], attachmentStrategy);
 }
 
 export async function deleteMicrosoftReplyDraft(

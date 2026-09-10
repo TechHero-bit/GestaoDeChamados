@@ -12,7 +12,12 @@ import {
 } from "../src/services/reply-attachment-policy.service.js";
 import {
   addMicrosoftDraftFileAttachment,
+  buildRegularAttachmentPayload,
+  buildSignatureAttachmentPayload,
   createMicrosoftAttachmentUploadSession,
+  createMicrosoftReplyDraft,
+  listMicrosoftDraftAttachments,
+  sendMicrosoftReplyDraft,
 } from "../src/services/microsoft-graph.service.js";
 import {
   createTicketReplyDraft,
@@ -35,6 +40,29 @@ const ticket = {
 };
 const connected = async () => ({ connected: true, email: "Agent@Example.com" });
 const noSignature = async () => ({ enabled: false, hasSignature: false });
+
+test("assinatura e anexo comum usam o mesmo builder de fileAttachment", () => {
+  const contentBytes = Buffer.from("same-bytes").toString("base64");
+  const signature = buildSignatureAttachmentPayload({
+    contentBytes,
+    contentId: "smartdesk-signature",
+  });
+  const regular = buildRegularAttachmentPayload({
+    name: "print.png",
+    contentType: "image/png",
+    contentBytes,
+  });
+
+  assert.equal(signature["@odata.type"], regular["@odata.type"]);
+  assert.equal(signature["@odata.type"], "#microsoft.graph.fileAttachment");
+  assert.equal(signature.isInline, true);
+  assert.equal(signature.contentId, "smartdesk-signature");
+  assert.equal(regular.isInline, false);
+  assert.equal("contentId" in regular, false);
+  assert.equal("contentLocation" in signature, false);
+  assert.equal("contentLocation" in regular, false);
+  assert.equal(signature.contentBytes, regular.contentBytes);
+});
 
 test("política separa attachment simples e upload session exatamente em 3 MiB", () => {
   assert.equal(normalizeReplyAttachment({ name: "a.pdf", size: SMALL_ATTACHMENT_LIMIT_BYTES - 1 }).kind, "simple");
@@ -225,6 +253,15 @@ test("erro percorre Graph, draft service, controller e error middleware sem perd
       graph_status: 400,
       graph_error: "ErrorInvalidRequest",
       attachment_strategy: "small",
+      attachment_debug: {
+        draft_exists: true,
+        draft_sent_before_attachment: false,
+        same_draft: true,
+        payload_direct_object: true,
+        odata_type_matches_signature: true,
+        buffer_present: true,
+        base64_roundtrip_valid: true,
+      },
     },
   });
   const serialized = JSON.stringify(publicResponse);
@@ -258,6 +295,165 @@ test("arquivo de 5 MB cria upload session oficial sem enviar os bytes", async ()
   });
   assert.equal(request.options.body.includes("contentBytes"), false);
   assert.equal(session.uploadUrl, "https://upload.example/capability-secret");
+});
+
+test("assinatura, anexo comum, verificação e send usam o mesmo draft na ordem correta", async () => {
+  const signatureBytes = Buffer.from("signature-png");
+  const regularBytes = Buffer.alloc(100 * 1024, 13);
+  const attachments = [{ name: "print.png", size: regularBytes.length, contentType: "image/png" }];
+  const operations = [];
+  const draftUrls = [];
+  const graphDependencies = {
+    getAccessToken: async () => "secret-token",
+    fetchImpl: async (url, options = {}) => {
+      const method = options.method || "GET";
+      if (url.endsWith("/createReply")) {
+        operations.push("createReply");
+        return new Response(JSON.stringify({ id: "same-draft" }), {
+          status: 201,
+          headers: { "Content-Type": "application/json" },
+        });
+      }
+      draftUrls.push(url);
+      if (method === "PATCH") {
+        operations.push("patch");
+        return new Response("{}", { status: 200 });
+      }
+      if (method === "POST" && url.endsWith("/attachments")) {
+        const payload = JSON.parse(options.body);
+        assert.equal("attachment" in payload, false, "payload deve ser o objeto direto");
+        assert.equal(payload["@odata.type"], "#microsoft.graph.fileAttachment");
+        operations.push(payload.isInline ? "signature" : "regular");
+        return new Response("{}", { status: 201 });
+      }
+      if (method === "GET" && url.includes("/attachments?")) {
+        assert.equal(url.includes("contentId"), false, "$select não deve projetar propriedade derivada");
+        operations.push("list");
+        return new Response(JSON.stringify({ value: [
+          { name: "signature.png", size: signatureBytes.length, isInline: true },
+          { name: "print.png", size: regularBytes.length, isInline: false },
+        ] }), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
+      if (method === "POST" && url.endsWith("/send")) {
+        operations.push("send");
+        return new Response(null, { status: 202 });
+      }
+      assert.fail(`chamada Graph inesperada: ${method}`);
+    },
+  };
+
+  const draft = await createTicketReplyDraft(
+    { ticket, userId: "user-a", message: "Mensagem da timeline", attachments },
+    {
+      getConnectionStatus: connected,
+      getSignature: async () => ({
+        enabled: true,
+        hasSignature: true,
+        imageBytes: signatureBytes,
+      }),
+      createDraft: (userId, payload) => createMicrosoftReplyDraft(userId, payload, graphDependencies),
+    },
+  );
+  await uploadSmallTicketReplyAttachment(
+    {
+      ticketId: ticket.id,
+      userId: "user-a",
+      handle: draft.handle,
+      message: "Mensagem da timeline",
+      attachments,
+      index: 0,
+      file: { size: regularBytes.length, buffer: regularBytes },
+    },
+    {
+      addAttachment: (userId, payload) => addMicrosoftDraftFileAttachment(
+        userId,
+        payload,
+        graphDependencies,
+      ),
+    },
+  );
+  await sendTicketReplyDraft(
+    {
+      ticket,
+      userId: "user-a",
+      handle: draft.handle,
+      message: "Mensagem da timeline",
+      attachments,
+    },
+    {
+      getConnectionStatus: connected,
+      listAttachments: (userId, draftId, context) => listMicrosoftDraftAttachments(
+        userId,
+        draftId,
+        { ...graphDependencies, ...context },
+      ),
+      sendDraft: (userId, draftId, context) => sendMicrosoftReplyDraft(
+        userId,
+        draftId,
+        { ...graphDependencies, ...context },
+      ),
+      persistMessage: async (payload) => payload,
+    },
+  );
+
+  assert.deepEqual(operations, ["createReply", "patch", "signature", "regular", "list", "send"]);
+  assert.equal(operations.filter((operation) => operation === "send").length, 1);
+  assert.equal(draftUrls.every((url) => url.includes("/messages/same-draft")), true);
+});
+
+test("BadRequest na verificação de attachments mantém strategy small e debug seguro", async () => {
+  const attachments = [{ name: "print.png", size: 100 * 1024, contentType: "image/png" }];
+  const draft = await createFlow(attachments, {
+    enabled: true,
+    hasSignature: true,
+    imageBytes: Buffer.from("signature"),
+  });
+  let failure;
+  try {
+    await sendTicketReplyDraft(
+      {
+        ticket,
+        userId: "user-a",
+        handle: draft.handle,
+        message: "Mensagem da timeline",
+        attachments,
+      },
+      {
+        getConnectionStatus: connected,
+        listAttachments: (userId, draftId, context) => listMicrosoftDraftAttachments(
+          userId,
+          draftId,
+          {
+            ...context,
+            getAccessToken: async () => "secret-token",
+            fetchImpl: async (url) => {
+              assert.equal(url.includes("contentId"), false);
+              return new Response(JSON.stringify({
+                error: { code: "BadRequest", message: "sensitive Graph message" },
+              }), { status: 400, headers: { "Content-Type": "application/json" } });
+            },
+          },
+        ),
+        sendDraft: async () => assert.fail("não deve enviar após falha de verificação"),
+        persistMessage: async () => assert.fail("não deve persistir após falha de verificação"),
+      },
+    );
+  } catch (error) {
+    failure = error;
+  }
+
+  assert.equal(failure.graphStatus, 400);
+  assert.equal(failure.graphError, "BadRequest");
+  assert.equal(failure.attachmentStrategy, "small");
+  assert.deepEqual(failure.attachmentDebug, {
+    draft_exists: true,
+    draft_sent_before_attachment: false,
+    same_draft: true,
+    payload_direct_object: true,
+    odata_type_matches_signature: true,
+    buffer_present: true,
+    base64_roundtrip_valid: true,
+  });
 });
 
 async function createFlow(attachments, signature = null) {

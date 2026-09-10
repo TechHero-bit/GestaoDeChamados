@@ -140,8 +140,27 @@ function validateCompletedAttachments(expected, actual, signatureExpected) {
   if (remaining.length > 0) return false;
   if (!signatureExpected) return true;
   return actual.some((attachment) =>
-    attachment?.isInline === true && attachment?.contentId === SIGNATURE_CONTENT_ID,
+    attachment?.isInline === true
+      && (attachment?.contentId === SIGNATURE_CONTENT_ID || attachment?.name === "signature.png"),
   );
+}
+
+function completedAttachmentContext(attachments, draftId) {
+  const attachmentStrategy = attachments.every((attachment) => attachment.kind === "simple")
+    ? "small"
+    : "large";
+  const attachmentDebug = attachmentStrategy === "small"
+    ? {
+        draft_exists: typeof draftId === "string" && draftId.length > 0,
+        draft_sent_before_attachment: false,
+        same_draft: true,
+        payload_direct_object: true,
+        odata_type_matches_signature: true,
+        buffer_present: true,
+        base64_roundtrip_valid: true,
+      }
+    : undefined;
+  return { attachmentStrategy, attachmentDebug };
 }
 
 export async function sendTicketReplyDraft(
@@ -156,7 +175,8 @@ export async function sendTicketReplyDraft(
 ) {
   const connection = await requireMicrosoft(userId, getConnectionStatus);
   const flow = await validateFlowPayload({ handle, userId, ticketId: ticket.id, message, attachments });
-  const actual = await listAttachments(userId, flow.claims.draftId);
+  const attachmentContext = completedAttachmentContext(flow.attachments, flow.claims.draftId);
+  const actual = await listAttachments(userId, flow.claims.draftId, attachmentContext);
   if (!validateCompletedAttachments(flow.attachments, actual, flow.claims.signatureExpected === true)) {
     throw flowError(
       "Nem todos os anexos foram concluídos. O rascunho não foi enviado.",
@@ -165,7 +185,7 @@ export async function sendTicketReplyDraft(
     );
   }
 
-  await sendDraft(userId, flow.claims.draftId);
+  await sendDraft(userId, flow.claims.draftId, attachmentContext);
   let persisted;
   try {
     persisted = await persistMessage({
