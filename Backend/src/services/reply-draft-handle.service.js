@@ -18,8 +18,24 @@ export function replyDraftDigest(message, attachments) {
     .digest("base64url");
 }
 
-export async function signReplyDraftHandle({ userId, ticketId, draftId, digest, signatureExpected }) {
-  return new SignJWT({ ticketId, draftId, digest, signatureExpected: signatureExpected === true })
+export async function signReplyDraftHandle({
+  userId,
+  ticketId,
+  draftId,
+  digest,
+  signatureExpected,
+  smallUploadIndexes = [],
+}) {
+  const confirmedSmallUploads = [...new Set(smallUploadIndexes)]
+    .filter((index) => Number.isInteger(index) && index >= 0 && index <= 19)
+    .sort((left, right) => left - right);
+  return new SignJWT({
+    ticketId,
+    draftId,
+    digest,
+    signatureExpected: signatureExpected === true,
+    smallUploadIndexes: confirmedSmallUploads,
+  })
     .setProtectedHeader({ alg: "HS256", typ: "JWT" })
     .setSubject(userId)
     .setAudience(HANDLE_AUDIENCE)

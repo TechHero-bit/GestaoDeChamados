@@ -29,8 +29,12 @@ function policyError(message, publicCode = "ATTACHMENT_INVALID", statusCode = 40
   return Object.assign(new Error(message), { statusCode, publicCode });
 }
 
+export function normalizeReplyAttachmentName(name) {
+  return String(name || "").normalize("NFC").trim();
+}
+
 export function normalizeReplyAttachment(attachment) {
-  const name = String(attachment?.name || "").normalize("NFC").trim();
+  const name = normalizeReplyAttachmentName(attachment?.name);
   if (!name || name.length > 255 || /[\u0000-\u001f\u007f/\\]/.test(name)) {
     throw policyError("O nome de um dos anexos é inválido.");
   }

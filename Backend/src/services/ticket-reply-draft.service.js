@@ -11,6 +11,7 @@ import { getUserSignatureConfig } from "./signature.service.js";
 import { adicionarMensagem, getHelpdeskEmail } from "./ticket.service.js";
 import { composeTicketReplyHtml, getReplyMessageId } from "./ticket-reply.service.js";
 import {
+  normalizeReplyAttachmentName,
   normalizeReplyAttachments,
   publicAttachmentMetadata,
   SMALL_ATTACHMENT_LIMIT_BYTES,
@@ -80,7 +81,7 @@ export async function createTicketReplyDraft(
   try {
     handle = await signReplyDraftHandle({
       userId, ticketId: ticket.id, draftId: draft.draftId,
-      digest: replyDraftDigest(message, normalized), signatureExpected,
+      digest: replyDraftDigest(message, normalized), signatureExpected, smallUploadIndexes: [],
     });
   } catch (error) {
     try { await deleteDraft(userId, draft.draftId); } catch {}
@@ -112,7 +113,22 @@ export async function uploadSmallTicketReplyAttachment(
     draftId: flow.claims.draftId,
     attachment: { ...attachment, bytes: file.buffer },
   });
-  return publicAttachmentMetadata(attachment);
+  const smallUploadIndexes = Array.isArray(flow.claims.smallUploadIndexes)
+    ? [...flow.claims.smallUploadIndexes, index]
+    : [index];
+  const nextHandle = await signReplyDraftHandle({
+    userId,
+    ticketId,
+    draftId: flow.claims.draftId,
+    digest: flow.claims.digest,
+    signatureExpected: flow.claims.signatureExpected === true,
+    smallUploadIndexes,
+  });
+  return {
+    ...publicAttachmentMetadata(attachment),
+    handle: nextHandle,
+    small_attachment_created: true,
+  };
 }
 
 export async function createTicketReplyUploadSession(
@@ -127,22 +143,81 @@ export async function createTicketReplyUploadSession(
   return createUploadSession(userId, { draftId: flow.claims.draftId, attachment });
 }
 
-function validateCompletedAttachments(expected, actual, signatureExpected) {
-  const ordinary = actual.filter((attachment) => attachment?.isInline !== true);
-  const remaining = [...ordinary];
+function matchOneToOne(expected, actual, predicate) {
+  const remaining = [...actual];
+  let foundCount = 0;
   for (const expectedAttachment of expected) {
-    const match = remaining.findIndex((attachment) =>
-      attachment?.name === expectedAttachment.name && Number(attachment?.size) === expectedAttachment.size,
-    );
-    if (match < 0) return false;
+    const match = remaining.findIndex((actualAttachment) =>
+      predicate(expectedAttachment, actualAttachment));
+    if (match < 0) continue;
+    foundCount += 1;
     remaining.splice(match, 1);
   }
-  if (remaining.length > 0) return false;
-  if (!signatureExpected) return true;
-  return actual.some((attachment) =>
+  return { foundCount, remaining };
+}
+
+function sameAttachmentName(expectedAttachment, actualAttachment) {
+  return normalizeReplyAttachmentName(actualAttachment?.name) === expectedAttachment.name;
+}
+
+function evaluateCompletedAttachments(expected, actual, signatureExpected, claims) {
+  const graphAttachments = Array.isArray(actual) ? actual : [];
+  const graphRegular = graphAttachments.filter((attachment) => attachment?.isInline === false);
+  const signatureFound = graphAttachments.some((attachment) =>
     attachment?.isInline === true
-      && (attachment?.contentId === SIGNATURE_CONTENT_ID || attachment?.name === "signature.png"),
+      && (attachment?.contentId === SIGNATURE_CONTENT_ID
+        || attachment?.name === "signature.png"),
   );
+  const exact = matchOneToOne(expected, graphRegular, (expectedAttachment, actualAttachment) =>
+    sameAttachmentName(expectedAttachment, actualAttachment)
+      && Number(actualAttachment?.size) === expectedAttachment.size);
+  const byName = matchOneToOne(expected, graphRegular, sameAttachmentName);
+  const expectedSmallIndexes = expected
+    .map((attachment, index) => attachment.kind === "simple" ? index : null)
+    .filter((index) => index !== null);
+  const confirmedSmallIndexes = new Set(
+    Array.isArray(claims?.smallUploadIndexes) ? claims.smallUploadIndexes : [],
+  );
+  const smallUploadConfirmed = expectedSmallIndexes.every((index) => confirmedSmallIndexes.has(index));
+  const draftHandleCurrent = smallUploadConfirmed;
+  const allRegularFound = exact.foundCount === expected.length && exact.remaining.length === 0;
+  const readyToSend = allRegularFound
+    && (!signatureExpected || signatureFound)
+    && draftHandleCurrent;
+  const counts = {
+    expected_count: expected.length,
+    found_count: exact.foundCount,
+    missing_count: expected.length - exact.foundCount,
+    unexpected_count: exact.remaining.length,
+  };
+  const attachmentDebug = expected.length === 1
+    ? {
+        expected_regular_count: expected.length,
+        graph_regular_count: graphRegular.length,
+        signature_expected: signatureExpected,
+        signature_found: signatureFound,
+        regular_name_matches: byName.foundCount === expected.length,
+        regular_size_matches: byName.foundCount === expected.length
+          && exact.foundCount === expected.length,
+        regular_inline_matches: graphAttachments.some((attachment) =>
+          attachment?.isInline === false && sameAttachmentName(expected[0], attachment)),
+        all_regular_found: allRegularFound,
+        small_upload_confirmed: smallUploadConfirmed,
+        graph_regular_attachment_found: exact.foundCount === expected.length,
+        draft_handle_current: draftHandleCurrent,
+        manifest_attachment_count: expected.length,
+        ready_to_send: readyToSend,
+      }
+    : {
+        ...counts,
+        signature_expected: signatureExpected,
+        signature_found: signatureFound,
+        small_upload_confirmed: smallUploadConfirmed,
+        draft_handle_current: draftHandleCurrent,
+        manifest_attachment_count: expected.length,
+        ready_to_send: readyToSend,
+      };
+  return { readyToSend, attachmentDebug };
 }
 
 function completedAttachmentContext(attachments, draftId) {
@@ -177,12 +252,18 @@ export async function sendTicketReplyDraft(
   const flow = await validateFlowPayload({ handle, userId, ticketId: ticket.id, message, attachments });
   const attachmentContext = completedAttachmentContext(flow.attachments, flow.claims.draftId);
   const actual = await listAttachments(userId, flow.claims.draftId, attachmentContext);
-  if (!validateCompletedAttachments(flow.attachments, actual, flow.claims.signatureExpected === true)) {
-    throw flowError(
+  const validation = evaluateCompletedAttachments(
+    flow.attachments,
+    actual,
+    flow.claims.signatureExpected === true,
+    flow.claims,
+  );
+  if (!validation.readyToSend) {
+    throw Object.assign(flowError(
       "Nem todos os anexos foram concluídos. O rascunho não foi enviado.",
       409,
       "ATTACHMENTS_INCOMPLETE",
-    );
+    ), { attachmentDebug: validation.attachmentDebug });
   }
 
   await sendDraft(userId, flow.claims.draftId, attachmentContext);

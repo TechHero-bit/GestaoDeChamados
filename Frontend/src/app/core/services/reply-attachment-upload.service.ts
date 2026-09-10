@@ -41,6 +41,11 @@ interface UploadSessionResponse {
   nextExpectedRanges: string[];
 }
 
+interface SmallAttachmentResponse {
+  handle: string;
+  small_attachment_created: true;
+}
+
 type ProgressCallback = (index: number, uploaded: number, state: AttachmentUploadState) => void;
 
 @Injectable({ providedIn: 'root' })
@@ -98,7 +103,7 @@ export class ReplyAttachmentUploadService {
         onProgress(descriptor.index, 0, 'uploading');
         if (strategy === 'small') {
           attachmentFlowDiagnostic({ strategy: 'small', small_upload_started: true });
-          await this.uploadSmall(
+          handle = await this.uploadSmall(
             ticketId,
             handle,
             message,
@@ -171,7 +176,7 @@ export class ReplyAttachmentUploadService {
     file: File,
     signal: AbortSignal,
     onProgress: (uploaded: number) => void,
-  ): Promise<void> {
+  ): Promise<string> {
     const form = createSmallAttachmentFormData(
       handle,
       index,
@@ -180,7 +185,7 @@ export class ReplyAttachmentUploadService {
       file,
       file.name,
     );
-    await new Promise<void>((resolve, reject) => {
+    return new Promise<string>((resolve, reject) => {
       if (signal.aborted) return reject(new DOMException('Aborted', 'AbortError'));
       let settled = false;
       let subscription: Subscription | undefined;
@@ -196,10 +201,11 @@ export class ReplyAttachmentUploadService {
       }
       signal.addEventListener('abort', abort, { once: true });
       subscription = this.http
-        .post(`${this.ticketsUrl}/${ticketId}/reply/draft/attachments`, form, {
-          reportProgress: true,
-          observe: 'events',
-        })
+        .post<ApiDataResponse<SmallAttachmentResponse>>(
+          `${this.ticketsUrl}/${ticketId}/reply/draft/attachments`,
+          form,
+          { reportProgress: true, observe: 'events' },
+        )
         .pipe(timeout(BACKEND_REQUEST_TIMEOUT_MS))
         .subscribe({
           next: (event) => {
@@ -207,8 +213,13 @@ export class ReplyAttachmentUploadService {
               onProgress(Math.min(file.size, Math.floor((event.loaded / event.total) * file.size)));
             }
             if (event.type === HttpEventType.Response) {
+              const nextHandle = event.body?.data?.handle;
+              if (!nextHandle || event.body?.data?.small_attachment_created !== true) {
+                finish(() => reject(new Error('O servidor não confirmou a criação do anexo.')));
+                return;
+              }
               onProgress(file.size);
-              finish(resolve);
+              finish(() => resolve(nextHandle));
             }
           },
           error: (error) => finish(() => reject(error)),

@@ -58,6 +58,22 @@ export function errorMiddleware(err, req, res, _next) {
     });
   }
 
+  const safeCompletionDebug = err.publicCode === "ATTACHMENTS_INCOMPLETE"
+    && err.attachmentDebug && typeof err.attachmentDebug === "object"
+    ? Object.fromEntries(Object.entries(err.attachmentDebug).filter(([key, value]) =>
+        [
+          "expected_regular_count", "graph_regular_count", "expected_count", "found_count",
+          "missing_count", "unexpected_count", "manifest_attachment_count",
+        ].includes(key)
+          ? Number.isSafeInteger(value) && value >= 0
+          : [
+              "signature_expected", "signature_found", "regular_name_matches",
+              "regular_size_matches", "regular_inline_matches", "all_regular_found",
+              "small_upload_confirmed", "graph_regular_attachment_found",
+              "draft_handle_current", "ready_to_send",
+            ].includes(key) && typeof value === "boolean"))
+    : null;
+
   // Log detalhado somente em desenvolvimento
   if (process.env.NODE_ENV !== "production") {
     console.error("❌ Erro:", {
@@ -74,6 +90,7 @@ export function errorMiddleware(err, req, res, _next) {
   res.status(statusCode).json({
     success: false,
     ...(err.publicCode ? { code: err.publicCode } : {}),
+    ...(safeCompletionDebug ? { attachment_debug: safeCompletionDebug } : {}),
     message:
       statusCode === 500 && process.env.NODE_ENV === "production"
         ? "Erro interno do servidor."
