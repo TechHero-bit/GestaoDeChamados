@@ -41,6 +41,22 @@ const ticket = {
 const connected = async () => ({ connected: true, email: "Agent@Example.com" });
 const noSignature = async () => ({ enabled: false, hasSignature: false });
 
+function graphAttachment(name, size, id = "attachment-1") {
+  return { id, name, size, isInline: false };
+}
+
+function confirmedSmallUpload(name, size, id = "attachment-1") {
+  return {
+    attachmentId: id,
+    name,
+    isInline: false,
+    graphSize: size,
+    parsedBufferSize: size,
+    base64RoundtripValid: true,
+    graphCreateConfirmed: true,
+  };
+}
+
 test("assinatura e anexo comum usam o mesmo builder de fileAttachment", () => {
   const contentBytes = Buffer.from("same-bytes").toString("base64");
   const signature = buildSignatureAttachmentPayload({
@@ -110,7 +126,7 @@ test("PDF de 1 MB gera fileAttachment estrito e Base64 reversível", async () =>
       getAccessToken: async () => "secret-token",
       fetchImpl: async (url, options) => {
         request = { url, options };
-        return new Response("{}", { status: 201 });
+        return Response.json(graphAttachment("report.pdf", bytes.length), { status: 201 });
       },
     },
   );
@@ -173,7 +189,7 @@ test("rota real de attachment recebe multipart PNG de 100 KB no campo attachment
         getAccessToken: async () => "secret-token",
         fetchImpl: async (url, options) => {
           graphRequest = { url, options };
-          return new Response("{}", { status: 201 });
+          return Response.json(graphAttachment("print.png", bytes.length), { status: 201 });
         },
       }),
     }),
@@ -182,6 +198,13 @@ test("rota real de attachment recebe multipart PNG de 100 KB no campo attachment
   assert.equal(controllerResponse.body.success, true);
   assert.equal(controllerResponse.body.data.small_attachment_created, true);
   assert.equal(typeof controllerResponse.body.data.handle, "string");
+  assert.equal(JSON.stringify(controllerResponse.body).includes("attachmentId"), false);
+  const handlePayload = JSON.parse(Buffer.from(
+    controllerResponse.body.data.handle.split(".")[1],
+    "base64url",
+  ));
+  assert.equal(JSON.stringify(handlePayload).includes("attachment-1"), false);
+  assert.equal(typeof handlePayload.smallUploadReceipts[0].attachmentIdDigest, "string");
   assertSmallAttachmentGraphRequest(graphRequest, {
     draftId: "draft-1", name: "print.png", contentType: "image/png", bytes,
   });
@@ -326,14 +349,19 @@ test("assinatura, anexo comum, verificação e send usam o mesmo draft na ordem 
         assert.equal("attachment" in payload, false, "payload deve ser o objeto direto");
         assert.equal(payload["@odata.type"], "#microsoft.graph.fileAttachment");
         operations.push(payload.isInline ? "signature" : "regular");
-        return new Response("{}", { status: 201 });
+        return Response.json(
+          payload.isInline
+            ? { id: "signature-id", name: "signature.png", size: signatureBytes.length, isInline: true }
+            : graphAttachment("print.png", regularBytes.length, "regular-id"),
+          { status: 201 },
+        );
       }
       if (method === "GET" && url.includes("/attachments?")) {
         assert.equal(url.includes("contentId"), false, "$select não deve projetar propriedade derivada");
         operations.push("list");
         return new Response(JSON.stringify({ value: [
           { name: "signature.png", size: signatureBytes.length, isInline: true },
-          { name: "print.png", size: regularBytes.length, isInline: false },
+          { id: "regular-id", name: "print.png", size: regularBytes.length, isInline: false },
         ] }), { status: 200, headers: { "Content-Type": "application/json" } });
       }
       if (method === "POST" && url.endsWith("/send")) {
@@ -514,7 +542,23 @@ test("arquivo pequeno é validado contra tamanho declarado antes do Graph", asyn
   );
 });
 
-test("mismatch de tamanho retorna diagnóstico seguro e mantém o draft sem envio", async () => {
+test("buffer multipart truncado bloqueia antes de chamar o Graph", async () => {
+  const attachments = [{ name: "small.pdf", size: 3, contentType: "application/pdf" }];
+  const draft = await createFlow(attachments);
+  await assert.rejects(
+    uploadSmallTicketReplyAttachment(
+      {
+        ticketId: ticket.id, userId: "user-a", handle: draft.handle,
+        message: "Mensagem da timeline", attachments, index: 0,
+        file: { size: 3, buffer: Buffer.from("xx") },
+      },
+      { addAttachment: async () => assert.fail("Graph não deve receber buffer truncado") },
+    ),
+    /não corresponde/,
+  );
+});
+
+test("mismatch isolado de Graph.size não invalida SMALL confirmado pelo id do POST 201", async () => {
   const attachments = [{ name: "print.png", size: 100 * 1024, contentType: "image/png" }];
   const draft = await createFlow(attachments, {
     enabled: true, hasSignature: true, imageBytes: Buffer.from("signature"),
@@ -525,55 +569,47 @@ test("mismatch de tamanho retorna diagnóstico seguro e mantém o draft sem envi
       message: "Mensagem da timeline", attachments, index: 0,
       file: { size: attachments[0].size, buffer: Buffer.alloc(attachments[0].size) },
     },
-    { addAttachment: async () => {} },
+    { addAttachment: async () => confirmedSmallUpload("print.png", attachments[0].size) },
   );
   let sent = false;
-  let failure;
-  try {
-    await sendTicketReplyDraft(
-      {
-        ticket, userId: "user-a", handle: uploaded.handle,
-        message: "Mensagem da timeline", attachments,
-      },
-      {
-        getConnectionStatus: connected,
-        listAttachments: async () => [
-          { name: "print.png", size: attachments[0].size + 1, isInline: false },
-          { name: "signature.png", size: 10, isInline: true },
-        ],
-        sendDraft: async () => { sent = true; },
-      },
-    );
-  } catch (error) {
-    failure = error;
-  }
-  assert.equal(sent, false);
-  assert.equal(failure.publicCode, "ATTACHMENTS_INCOMPLETE");
-  assert.deepEqual(failure.attachmentDebug, {
+  const result = await sendTicketReplyDraft(
+    {
+      ticket, userId: "user-a", handle: uploaded.handle,
+      message: "Mensagem da timeline", attachments,
+    },
+    {
+      getConnectionStatus: connected,
+      listAttachments: async () => [
+        graphAttachment("print.png", attachments[0].size + 1),
+        { name: "signature.png", size: 10, isInline: true },
+      ],
+      sendDraft: async () => { sent = true; },
+      persistMessage: async (payload) => payload,
+    },
+  );
+  assert.equal(sent, true);
+  assert.deepEqual(result.attachmentDebug, {
     expected_regular_count: 1,
     graph_regular_count: 1,
+    expected_size: 100 * 1024,
+    parsed_buffer_size: 100 * 1024,
+    graph_size: (100 * 1024) + 1,
+    size_delta: 1,
+    parser_size_matches: true,
+    base64_roundtrip_valid: true,
+    graph_create_confirmed: true,
     signature_expected: true,
     signature_found: true,
     regular_name_matches: true,
     regular_size_matches: false,
     regular_inline_matches: true,
-    all_regular_found: false,
+    all_regular_found: true,
     small_upload_confirmed: true,
-    graph_regular_attachment_found: false,
+    graph_regular_attachment_found: true,
     draft_handle_current: true,
     manifest_attachment_count: 1,
-    ready_to_send: false,
+    ready_to_send: true,
   });
-
-  let publicResponse;
-  const res = {
-    status(status) { publicResponse = { status }; return this; },
-    json(body) { publicResponse.body = body; return this; },
-  };
-  errorMiddleware(failure, { method: "POST", originalUrl: "/send" }, res, () => {});
-  assert.equal(publicResponse.status, 409);
-  assert.deepEqual(publicResponse.body.attachment_debug, failure.attachmentDebug);
-  assert.equal(JSON.stringify(publicResponse).includes("print.png"), false);
 });
 
 test("nome usa a mesma normalização NFC no manifesto, upload e retorno do Graph", async () => {
@@ -587,7 +623,10 @@ test("nome usa a mesma normalização NFC no manifesto, upload e retorno do Grap
       message: "Mensagem da timeline", attachments, index: 0,
       file: { size: 1024, buffer: Buffer.alloc(1024) },
     },
-    { addAttachment: async (_userId, payload) => { uploadedName = payload.attachment.name; } },
+    { addAttachment: async (_userId, payload) => {
+      uploadedName = payload.attachment.name;
+      return confirmedSmallUpload("relato é.png", 1024);
+    } },
   );
   let sent = false;
   await sendTicketReplyDraft(
@@ -597,7 +636,7 @@ test("nome usa a mesma normalização NFC no manifesto, upload e retorno do Grap
     },
     {
       getConnectionStatus: connected,
-      listAttachments: async () => [{ name: ` ${decomposedName} `, size: 1024, isInline: false }],
+      listAttachments: async () => [graphAttachment(` ${decomposedName} `, 1024)],
       sendDraft: async () => { sent = true; },
       persistMessage: async (payload) => payload,
     },
@@ -615,7 +654,7 @@ test("handle anterior ao 201 do upload pequeno é stale e não envia", async () 
       message: "Mensagem da timeline", attachments, index: 0,
       file: { size: 1024, buffer: Buffer.alloc(1024) },
     },
-    { addAttachment: async () => {} },
+    { addAttachment: async () => confirmedSmallUpload("print.png", 1024) },
   );
   let sent = false;
   await assert.rejects(
@@ -634,6 +673,67 @@ test("handle anterior ao 201 do upload pequeno é stale e não envia", async () 
       && error.attachmentDebug?.small_upload_confirmed === false,
   );
   assert.equal(sent, false);
+});
+
+test("SMALL confirmado ainda bloqueia se sumir, mudar de nome ou virar inline", async (t) => {
+  const cases = [
+    { name: "ausente", graphList: [] },
+    { name: "nome diferente", graphList: [graphAttachment("other.png", 1024)] },
+    {
+      name: "isInline incorreto",
+      graphList: [{ id: "attachment-1", name: "print.png", size: 1024, isInline: true }],
+    },
+  ];
+  for (const scenario of cases) {
+    await t.test(scenario.name, async () => {
+      const attachments = [{ name: "print.png", size: 1024, contentType: "image/png" }];
+      const draft = await createFlow(attachments);
+      const uploaded = await uploadSmallTicketReplyAttachment(
+        {
+          ticketId: ticket.id, userId: "user-a", handle: draft.handle,
+          message: "Mensagem da timeline", attachments, index: 0,
+          file: { size: 1024, buffer: Buffer.alloc(1024) },
+        },
+        { addAttachment: async () => confirmedSmallUpload("print.png", 1024) },
+      );
+      let sent = false;
+      let failure;
+      try {
+        await sendTicketReplyDraft(
+          {
+            ticket, userId: "user-a", handle: uploaded.handle,
+            message: "Mensagem da timeline", attachments,
+          },
+          {
+            getConnectionStatus: connected,
+            listAttachments: async () => scenario.graphList,
+            sendDraft: async () => { sent = true; },
+          },
+        );
+      } catch (error) {
+        failure = error;
+      }
+      assert.equal(failure?.publicCode, "ATTACHMENTS_INCOMPLETE");
+      assert.equal(failure?.attachmentDebug?.ready_to_send, false);
+      assert.equal(sent, false);
+
+      if (scenario.name === "ausente") {
+        let publicResponse;
+        const res = {
+          status(status) { publicResponse = { status }; return this; },
+          json(body) { publicResponse.body = body; return this; },
+        };
+        errorMiddleware(failure, { method: "POST", originalUrl: "/send" }, res, () => {});
+        assert.equal(publicResponse.status, 409);
+        assert.equal(publicResponse.body.attachment_debug.expected_size, 1024);
+        assert.equal(publicResponse.body.attachment_debug.parsed_buffer_size, 1024);
+        assert.equal(publicResponse.body.attachment_debug.graph_size, 0);
+        assert.equal(publicResponse.body.attachment_debug.size_delta, -1024);
+        assert.equal(JSON.stringify(publicResponse).includes("attachment-1"), false);
+        assert.equal(JSON.stringify(publicResponse).includes("print.png"), false);
+      }
+    });
+  }
 });
 
 test("falha ou ausência de qualquer anexo impede o envio do draft", async () => {
@@ -673,14 +773,15 @@ test("múltiplos anexos só enviam após todos concluídos e timeline não receb
       index: 0,
       file: { size: 10, buffer: Buffer.alloc(10) },
     },
-    { addAttachment: async () => {} },
+    { addAttachment: async () => confirmedSmallUpload("one.pdf", 10) },
   );
   const calls = [];
   const result = await sendTicketReplyDraft(
     { ticket, userId: "user-a", handle: uploaded.handle, message: "Mensagem da timeline", attachments },
     {
       getConnectionStatus: connected,
-      listAttachments: async () => attachments.map(({ name, size }) => ({ name, size, isInline: false })),
+      listAttachments: async () => attachments.map(({ name, size }, index) =>
+        graphAttachment(name, size, index === 0 ? "attachment-1" : "large-attachment")),
       sendDraft: async () => calls.push("send"),
       persistMessage: async (payload) => { calls.push("persist"); return payload; },
     },

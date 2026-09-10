@@ -63,14 +63,18 @@ export function errorMiddleware(err, req, res, _next) {
     ? Object.fromEntries(Object.entries(err.attachmentDebug).filter(([key, value]) =>
         [
           "expected_regular_count", "graph_regular_count", "expected_count", "found_count",
-          "missing_count", "unexpected_count", "manifest_attachment_count",
+          "missing_count", "unexpected_count", "manifest_attachment_count", "expected_size",
+          "parsed_buffer_size", "graph_size",
         ].includes(key)
           ? Number.isSafeInteger(value) && value >= 0
+          : key === "size_delta"
+            ? Number.isSafeInteger(value)
           : [
               "signature_expected", "signature_found", "regular_name_matches",
               "regular_size_matches", "regular_inline_matches", "all_regular_found",
               "small_upload_confirmed", "graph_regular_attachment_found",
-              "draft_handle_current", "ready_to_send",
+              "draft_handle_current", "ready_to_send", "parser_size_matches",
+              "base64_roundtrip_valid", "graph_create_confirmed",
             ].includes(key) && typeof value === "boolean"))
     : null;
 

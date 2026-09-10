@@ -17,6 +17,7 @@ import {
   SMALL_ATTACHMENT_LIMIT_BYTES,
 } from "./reply-attachment-policy.service.js";
 import {
+  replyDraftAttachmentIdDigest,
   replyDraftDigest,
   signReplyDraftHandle,
   verifyReplyDraftHandle,
@@ -81,7 +82,7 @@ export async function createTicketReplyDraft(
   try {
     handle = await signReplyDraftHandle({
       userId, ticketId: ticket.id, draftId: draft.draftId,
-      digest: replyDraftDigest(message, normalized), signatureExpected, smallUploadIndexes: [],
+      digest: replyDraftDigest(message, normalized), signatureExpected, smallUploadReceipts: [],
     });
   } catch (error) {
     try { await deleteDraft(userId, draft.draftId); } catch {}
@@ -106,23 +107,50 @@ export async function uploadSmallTicketReplyAttachment(
   if (!attachment || attachment.kind !== "simple") {
     throw flowError("Este anexo não pertence ao fluxo de upload simples.", 400, "ATTACHMENT_FLOW_INVALID");
   }
-  if (!file || file.size !== attachment.size || file.size >= SMALL_ATTACHMENT_LIMIT_BYTES) {
+  if (
+    !file
+      || !Buffer.isBuffer(file.buffer)
+      || file.size !== attachment.size
+      || file.buffer.length !== attachment.size
+      || file.size >= SMALL_ATTACHMENT_LIMIT_BYTES
+  ) {
     throw flowError("O arquivo recebido não corresponde ao anexo declarado.", 400, "ATTACHMENT_MISMATCH");
   }
-  await addAttachment(userId, {
+  const createdAttachment = await addAttachment(userId, {
     draftId: flow.claims.draftId,
     attachment: { ...attachment, bytes: file.buffer },
   });
-  const smallUploadIndexes = Array.isArray(flow.claims.smallUploadIndexes)
-    ? [...flow.claims.smallUploadIndexes, index]
-    : [index];
+  if (
+    createdAttachment?.graphCreateConfirmed !== true
+      || createdAttachment?.isInline !== false
+      || normalizeReplyAttachmentName(createdAttachment?.name) !== attachment.name
+      || typeof createdAttachment?.attachmentId !== "string"
+      || !createdAttachment.attachmentId
+  ) {
+    throw flowError(
+      "O Microsoft Outlook não confirmou a identidade do anexo criado.",
+      502,
+      "GRAPH_ATTACHMENT_CONFIRMATION_INVALID",
+    );
+  }
+  const receipt = {
+    index,
+    attachmentIdDigest: replyDraftAttachmentIdDigest(createdAttachment.attachmentId),
+    expectedSize: attachment.size,
+    parsedBufferSize: createdAttachment.parsedBufferSize,
+    base64RoundtripValid: createdAttachment.base64RoundtripValid === true,
+    graphCreateConfirmed: true,
+  };
+  const previousReceipts = Array.isArray(flow.claims.smallUploadReceipts)
+    ? flow.claims.smallUploadReceipts.filter((item) => item?.index !== index)
+    : [];
   const nextHandle = await signReplyDraftHandle({
     userId,
     ticketId,
     draftId: flow.claims.draftId,
     digest: flow.claims.digest,
     signatureExpected: flow.claims.signatureExpected === true,
-    smallUploadIndexes,
+    smallUploadReceipts: [...previousReceipts, receipt],
   });
   return {
     ...publicAttachmentMetadata(attachment),
@@ -172,28 +200,73 @@ function evaluateCompletedAttachments(expected, actual, signatureExpected, claim
     sameAttachmentName(expectedAttachment, actualAttachment)
       && Number(actualAttachment?.size) === expectedAttachment.size);
   const byName = matchOneToOne(expected, graphRegular, sameAttachmentName);
-  const expectedSmallIndexes = expected
-    .map((attachment, index) => attachment.kind === "simple" ? index : null)
-    .filter((index) => index !== null);
-  const confirmedSmallIndexes = new Set(
-    Array.isArray(claims?.smallUploadIndexes) ? claims.smallUploadIndexes : [],
+  const receipts = new Map(
+    (Array.isArray(claims?.smallUploadReceipts) ? claims.smallUploadReceipts : [])
+      .map((receipt) => [receipt?.index, receipt]),
   );
-  const smallUploadConfirmed = expectedSmallIndexes.every((index) => confirmedSmallIndexes.has(index));
+  const expectedWithIndex = expected.map((attachment, index) => ({ ...attachment, index }));
+  function validSmallReceipt(expectedAttachment) {
+    const receipt = receipts.get(expectedAttachment.index);
+    return receipt?.expectedSize === expectedAttachment.size
+      && receipt?.parsedBufferSize === expectedAttachment.size
+      && receipt?.base64RoundtripValid === true
+      && receipt?.graphCreateConfirmed === true
+      && typeof receipt?.attachmentIdDigest === "string";
+  }
+  const confirmed = matchOneToOne(
+    expectedWithIndex,
+    graphRegular,
+    (expectedAttachment, actualAttachment) => {
+      if (!sameAttachmentName(expectedAttachment, actualAttachment)) return false;
+      if (expectedAttachment.kind !== "simple") {
+        return Number(actualAttachment?.size) === expectedAttachment.size;
+      }
+      // Para SMALL, o ID confirmado pelo POST 201 identifica o mesmo objeto na
+      // listagem sem depender do size que o Exchange projetar para o attachment.
+      const receipt = receipts.get(expectedAttachment.index);
+      return validSmallReceipt(expectedAttachment)
+        && typeof actualAttachment?.id === "string"
+        && replyDraftAttachmentIdDigest(actualAttachment.id) === receipt.attachmentIdDigest;
+    },
+  );
+  const expectedSmall = expectedWithIndex.filter((attachment) => attachment.kind === "simple");
+  const smallUploadConfirmed = expectedSmall.every(validSmallReceipt);
   const draftHandleCurrent = smallUploadConfirmed;
-  const allRegularFound = exact.foundCount === expected.length && exact.remaining.length === 0;
+  const allRegularFound = confirmed.foundCount === expected.length && confirmed.remaining.length === 0;
   const readyToSend = allRegularFound
     && (!signatureExpected || signatureFound)
     && draftHandleCurrent;
   const counts = {
     expected_count: expected.length,
-    found_count: exact.foundCount,
-    missing_count: expected.length - exact.foundCount,
-    unexpected_count: exact.remaining.length,
+    found_count: confirmed.foundCount,
+    missing_count: expected.length - confirmed.foundCount,
+    unexpected_count: confirmed.remaining.length,
   };
+  const singleReceipt = receipts.get(0);
+  const graphReceiptMatch = expected.length === 1 && typeof singleReceipt?.attachmentIdDigest === "string"
+    ? graphRegular.find((attachment) =>
+        typeof attachment?.id === "string"
+          && replyDraftAttachmentIdDigest(attachment.id) === singleReceipt.attachmentIdDigest)
+    : undefined;
+  const graphNameMatch = expected.length === 1
+    ? graphRegular.find((attachment) => sameAttachmentName(expected[0], attachment))
+    : undefined;
+  const graphSizeValue = Number(graphReceiptMatch?.size ?? graphNameMatch?.size);
+  const graphSize = Number.isSafeInteger(graphSizeValue) && graphSizeValue >= 0 ? graphSizeValue : 0;
+  const parsedBufferSize = Number.isSafeInteger(singleReceipt?.parsedBufferSize)
+    ? singleReceipt.parsedBufferSize
+    : 0;
   const attachmentDebug = expected.length === 1
     ? {
         expected_regular_count: expected.length,
         graph_regular_count: graphRegular.length,
+        expected_size: expected[0].size,
+        parsed_buffer_size: parsedBufferSize,
+        graph_size: graphSize,
+        size_delta: graphSize - expected[0].size,
+        parser_size_matches: parsedBufferSize === expected[0].size,
+        base64_roundtrip_valid: singleReceipt?.base64RoundtripValid === true,
+        graph_create_confirmed: singleReceipt?.graphCreateConfirmed === true,
         signature_expected: signatureExpected,
         signature_found: signatureFound,
         regular_name_matches: byName.foundCount === expected.length,
@@ -203,7 +276,7 @@ function evaluateCompletedAttachments(expected, actual, signatureExpected, claim
           attachment?.isInline === false && sameAttachmentName(expected[0], attachment)),
         all_regular_found: allRegularFound,
         small_upload_confirmed: smallUploadConfirmed,
-        graph_regular_attachment_found: exact.foundCount === expected.length,
+        graph_regular_attachment_found: confirmed.foundCount === expected.length,
         draft_handle_current: draftHandleCurrent,
         manifest_attachment_count: expected.length,
         ready_to_send: readyToSend,
@@ -287,6 +360,7 @@ export async function sendTicketReplyDraft(
     message: persisted,
     provider: "microsoft_graph",
     attachments: flow.attachments.map(publicAttachmentMetadata),
+    attachmentDebug: validation.attachmentDebug,
   };
 }
 

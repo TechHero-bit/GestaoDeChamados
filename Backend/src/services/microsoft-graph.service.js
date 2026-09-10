@@ -586,6 +586,7 @@ async function postFileAttachmentToDraft(
     },
   );
   await ensureGraphResponse(response, [201], attachmentStrategy, attachmentDebug);
+  return readResponseJson(response);
 }
 
 export async function createMicrosoftReplyDraft(
@@ -683,14 +684,37 @@ export async function addMicrosoftDraftFileAttachment(
   diagnostic.attachment_request_started = true;
   logAttachmentGraphDiagnostic(diagnostic);
   try {
-    await postFileAttachmentToDraft(
+    const createdAttachment = await postFileAttachmentToDraft(
       accessToken,
       draftId,
       payload,
       { fetchImpl, timeoutMs: 30000, attachmentStrategy: "small", attachmentDebug },
     );
+    const graphCreateConfirmed = typeof createdAttachment?.id === "string"
+      && createdAttachment.id.length > 0
+      && createdAttachment.isInline === false
+      && typeof createdAttachment.name === "string";
+    if (!graphCreateConfirmed) {
+      throw graphAttachmentError(
+        502,
+        "MissingAttachmentConfirmation",
+        "small",
+        attachmentDebug,
+      );
+    }
     diagnostic.attachment_created = true;
     logAttachmentGraphDiagnostic(diagnostic);
+    return {
+      attachmentId: createdAttachment.id,
+      name: createdAttachment.name,
+      isInline: createdAttachment.isInline,
+      graphSize: Number.isSafeInteger(Number(createdAttachment.size))
+        ? Number(createdAttachment.size)
+        : null,
+      parsedBufferSize: attachment.bytes.length,
+      base64RoundtripValid: base64Generated,
+      graphCreateConfirmed: true,
+    };
   } catch (error) {
     logAttachmentGraphDiagnostic(diagnostic);
     throw error;

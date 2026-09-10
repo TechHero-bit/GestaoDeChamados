@@ -301,6 +301,7 @@ export async function finalizarRascunhoResposta(req, res, next) {
     return res.status(201).json({
       success: true, message: "Resposta enviada com sucesso.", data: sent.message,
       provider: sent.provider, attachments: sent.attachments,
+      attachment_debug: sent.attachmentDebug,
     });
   } catch (error) {
     next(error);
