@@ -26,11 +26,11 @@
         </div>
       </header>
       <p class="whitespace-pre-wrap break-words text-[15px] leading-6 text-text-secondary">
-        {{ message().corpo_mensagem }}
+        {{ formattedBody() }}
       </p>
-      @if (regularAttachments().length > 0) {
+      @if (attachments().length > 0) {
         <div class="mt-3 space-y-2" aria-label="Anexos da mensagem">
-          @for (attachment of regularAttachments(); track attachment.id) {
+          @for (attachment of attachments(); track attachment.id) {
             <app-file-attachment
               [name]="attachment.file_name"
               [size]="attachment.file_size"
@@ -68,7 +68,7 @@
         }}</time>
       </header>
       <p class="whitespace-pre-wrap break-words text-[15px] leading-6 text-text-secondary">
-        {{ message().corpo_mensagem }}
+        {{ formattedBody() }}
       </p>
     </div>
   </article>

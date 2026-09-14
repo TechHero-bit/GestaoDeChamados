@@ -1,4 +1,4 @@
-import { ChangeDetectionStrategy, Component, inject, input } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, input } from '@angular/core';
 import { IncomingAttachment, TicketDetail, TicketMessage } from '../../../../core/models/ticket.model';
 import { TicketService } from '../../../../core/services/ticket.service';
 import { FileAttachmentComponent } from '../../../../shared/components/file-attachment/file-attachment.component';
@@ -23,9 +23,18 @@ export class TicketMessageComponent {
   readonly initials = initials;
   readonly requesterName = requesterName;
 
+  readonly attachments = computed<IncomingAttachment[]>(() => {
+    return this.message().attachments || [];
+  });
+
   regularAttachments(): IncomingAttachment[] {
-    return (this.message().attachments || []).filter((attachment) => !attachment.is_inline);
+    return this.attachments();
   }
+
+  readonly formattedBody = computed<string>(() => {
+    const raw = this.message().corpo_mensagem || '';
+    return raw.replace(/\n{3,}/g, '\n\n').trim();
+  });
 
   attachmentState(attachment: IncomingAttachment): 'pending' | 'error' | 'available' {
     if (attachment.processing_status === 'Pendente') return 'pending';
