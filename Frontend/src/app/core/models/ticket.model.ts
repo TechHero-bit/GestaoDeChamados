@@ -1,6 +1,17 @@
 export type TicketStatus = 'Aberto' | 'Em Andamento' | 'Resolvido';
 export type TicketPriority = 'Baixa' | 'Normal' | 'Alta';
 export type TicketMessageDirection = 'Entrada' | 'Saida';
+export type IncomingAttachmentStatus = 'Pendente' | 'Disponivel' | 'Falhou';
+
+export interface IncomingAttachment {
+  id: string;
+  file_name: string;
+  content_type: string;
+  file_size: number;
+  is_inline: boolean;
+  content_id?: string | null;
+  processing_status: IncomingAttachmentStatus;
+}
 
 export interface TicketMessage {
   id: string;
@@ -11,6 +22,7 @@ export interface TicketMessage {
   corpo_mensagem: string;
   outlook_message_id?: string | null;
   data_criacao: string;
+  attachments: IncomingAttachment[];
 }
 
 export interface Ticket {

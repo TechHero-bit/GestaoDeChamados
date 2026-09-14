@@ -149,6 +149,7 @@ test("primeiro e-mail cria um ticket e uma mensagem de entrada", async () => {
   assert.equal(database.tickets[0].outlook_last_message_id, "MSG-1");
   assert.equal(database.tickets[0].outlook_conversation_id, "CONV-1");
   assert.equal(database.messages[0].direcao, "Entrada");
+  assert.deepEqual(result.message.attachments, []);
 });
 
 test("o mesmo message_id retorna duplicate sem criar dados", async () => {

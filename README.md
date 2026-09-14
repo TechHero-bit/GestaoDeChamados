@@ -91,6 +91,8 @@ Execute no SQL Editor do Supabase, rigorosamente nesta ordem:
 5. `database/migrations/005_audit_and_security.sql`
 6. `database/migrations/006_add_outlook_threading.sql`
 7. `database/migrations/007_create_microsoft_oauth.sql`
+8. `database/migrations/008_add_user_email_signatures.sql`
+9. `database/migrations/009_create_ticket_message_attachments.sql` (manual; cria o bucket privado `AnexosChamados`)
 
 ### Estrutura das Tabelas Principais:
 - **`users`**: Armazena colaboradores (`nome`, `email`, `password_hash`, `role: ADMIN | AGENT`, `ativo`, `ultimo_login`).
@@ -173,9 +175,12 @@ Abra `http://localhost:4200`.
 | `POST` | `/api/auth/logout` | Autenticada | Revoga sessão server-side e limpa cookie |
 | `GET` | `/api/auth/me` | Autenticada | Retorna dados do usuário autenticado |
 | `POST` | `/api/auth/activity` | Autenticada | Touch de atividade throttled |
-| `POST` | `/api/webhooks/outlook` | `x-webhook-secret` | Recebe novos e-mails do Power Automate |
+| `POST` | `/api/webhooks/outlook` | `x-webhook-secret` | Registra e-mail/metadados e emite upload temporário para anexos recebidos |
+| `POST` | `/api/webhooks/outlook/attachments/complete` | `x-webhook-secret` | Confirma arquivo escrito diretamente no Storage |
+| `POST` | `/api/webhooks/outlook/attachments/fail` | `x-webhook-secret` | Marca falha parcial de processamento |
 | `GET` | `/api/tickets` | Autenticada (Rate Limit) | Lista e filtra chamados |
-| `GET` | `/api/tickets/:id` | Autenticada | Retorna ticket e histórico de mensagens |
+| `GET` | `/api/tickets/:id` | Autenticada | Retorna ticket, mensagens e metadados seguros dos anexos |
+| `GET` | `/api/tickets/:id/attachments/:attachmentId` | Autenticada | Abre/baixa attachment recebido por URL privada temporária |
 | `PUT` | `/api/tickets/:id` | Autenticada | Atualiza o status do chamado |
 | `DELETE` | `/api/tickets/:id` | Autenticada (Apenas `ADMIN`) | Exclui chamado e mensagens associadas |
 | `POST` | `/api/tickets/:id/reply` | Autenticada (Rate Limit 10/min) | Envia resposta ao solicitante via Outlook |

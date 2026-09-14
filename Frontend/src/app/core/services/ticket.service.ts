@@ -60,6 +60,13 @@ export class TicketService {
       .pipe(catchError((error) => this.handleError(error)));
   }
 
+  attachmentAccessUrl(ticketId: string, attachmentId: string, download = false): string {
+    const ticket = encodeURIComponent(ticketId);
+    const attachment = encodeURIComponent(attachmentId);
+    const suffix = download ? '?download=1' : '';
+    return `${this.apiUrl}/${ticket}/attachments/${attachment}${suffix}`;
+  }
+
   responder(id: string, mensagem: string): Observable<TicketMessage> {
     return this.http
       .post<ApiDataResponse<TicketMessage>>(`${this.apiUrl}/${id}/reply`, { mensagem })

@@ -103,6 +103,13 @@ test("GET /api/tickets/:id sem autenticação retorna 401", async () => {
   assert.equal(response.status, 401);
 });
 
+test("GET de attachment recebido sem autenticação retorna 401", async () => {
+  const response = await fetch(
+    `${baseUrl}/api/tickets/00000000-0000-4000-8000-000000000001/attachments/00000000-0000-4000-8000-000000000002`,
+  );
+  assert.equal(response.status, 401);
+});
+
 test("POST /api/tickets/:id/reply sem autenticação retorna 401", async () => {
   const response = await fetch(
     `${baseUrl}/api/tickets/00000000-0000-4000-8000-000000000001/reply`,

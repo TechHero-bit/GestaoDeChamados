@@ -1,5 +1,9 @@
 import * as ticketService from "../services/ticket.service.js";
 import {
+  createIncomingAttachmentDownloadUrl,
+  getIncomingAttachmentForTicket,
+} from "../services/incoming-attachment.service.js";
+import {
   getReplyMessageId,
   sendAndPersistTicketReply,
 } from "../services/ticket-reply.service.js";
@@ -89,6 +93,38 @@ export async function buscarTicket(req, res, next) {
       success: true,
       data: ticket,
     });
+  } catch (error) {
+    next(error);
+  }
+}
+
+/**
+ * GET /api/tickets/:id/attachments/:attachmentId
+ * Confere o vínculo do arquivo com o ticket e redireciona para uma URL privada
+ * de curtíssima duração; o frontend nunca recebe storage_path ou service key.
+ */
+export async function abrirAnexoRecebido(req, res, next) {
+  try {
+    const ticketId = parseTicketId(req.params.id, res);
+    if (!ticketId) return;
+    const attachmentId = parseTicketId(req.params.attachmentId, res);
+    if (!attachmentId) return;
+
+    const attachment = await getIncomingAttachmentForTicket({
+      ticketId,
+      attachmentId,
+    });
+    if (!attachment) {
+      return res.status(404).json({
+        success: false,
+        message: "Anexo disponível não encontrado neste chamado.",
+      });
+    }
+
+    const signedUrl = await createIncomingAttachmentDownloadUrl(attachment, {
+      download: req.query.download === "1",
+    });
+    return res.redirect(302, signedUrl);
   } catch (error) {
     next(error);
   }

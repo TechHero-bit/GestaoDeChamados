@@ -7,6 +7,7 @@ import {
 } from "../config/rate-limit.js";
 import {
   adicionarAnexoSimplesResposta,
+  abrirAnexoRecebido,
   atualizarTicket,
   buscarTicket,
   cancelarRascunhoResposta,
@@ -42,6 +43,13 @@ router.get(
   "/:id",
   rateLimitMiddleware(generalLimiter, (req) => req.user?.id || getClientIp(req)),
   buscarTicket,
+);
+
+// GET /api/tickets/:id/attachments/:attachmentId — Acesso privado a attachment recebido
+router.get(
+  "/:id/attachments/:attachmentId",
+  rateLimitMiddleware(generalLimiter, (req) => req.user?.id || getClientIp(req)),
+  abrirAnexoRecebido,
 );
 
 // PUT /api/tickets/:id — Atualizar campos permitidos do ticket

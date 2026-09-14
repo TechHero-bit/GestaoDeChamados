@@ -1,52 +1,99 @@
-import { webhookPayloadSchema } from "../schemas/webhook.schema.js";
+import {
+  completeIncomingAttachmentSchema,
+  failIncomingAttachmentSchema,
+  webhookPayloadSchema,
+} from "../schemas/webhook.schema.js";
+import {
+  completeIncomingAttachment,
+  failIncomingAttachment,
+  prepareIncomingAttachments,
+} from "../services/incoming-attachment.service.js";
 import * as ticketService from "../services/ticket.service.js";
+
+function validationError(res, result, message = "Payload inválido.") {
+  return res.status(400).json({
+    success: false,
+    message,
+    errors: result.error.errors.map((error) => ({
+      campo: error.path.join("."),
+      mensagem: error.message,
+    })),
+  });
+}
 
 /**
  * POST /api/webhooks/outlook
- * Recebe e-mail do Power Automate e cria ou anexa ao ticket da conversa.
+ * Recebe os metadados do e-mail/attachments do Power Automate, persiste a
+ * mensagem e devolve capabilities temporárias para o upload direto ao Storage.
  */
 export async function receberEmailOutlook(req, res, next) {
   try {
-    // 1. Validar payload com Zod
     const resultado = webhookPayloadSchema.safeParse(req.body);
-
-    if (!resultado.success) {
-      return res.status(400).json({
-        success: false,
-        message: "Payload inválido.",
-        errors: resultado.error.errors.map((e) => ({
-          campo: e.path.join("."),
-          mensagem: e.message,
-        })),
-      });
-    }
+    if (!resultado.success) return validationError(res, resultado);
 
     const dados = resultado.data;
-
-    // 2. Idempotência por message_id e, depois, correlação por conversation_id
     const resultadoEntrada = await ticketService.processarEntrada({
       ...dados,
+      // Apenas metadados entram no payload de auditoria: nunca contentBytes.
       payload_original: req.body,
     });
 
-    if (resultadoEntrada.duplicate) {
-      return res.status(200).json({
-        success: true,
-        duplicate: true,
-        message: "E-mail já processado.",
-        ticket_id: resultadoEntrada.ticket.id,
-      });
-    }
+    const attachments = resultadoEntrada.message
+      ? await prepareIncomingAttachments({
+          ticket: resultadoEntrada.ticket,
+          message: resultadoEntrada.message,
+          attachments: dados.attachments,
+        })
+      : [];
 
-    // 3. Uma resposta da conversa cria somente uma mensagem no ticket existente
-    return res.status(201).json({
+    return res.status(resultadoEntrada.duplicate ? 200 : 201).json({
       success: true,
-      duplicate: false,
-      message: resultadoEntrada.threaded
-        ? "Mensagem adicionada ao chamado com sucesso."
-        : "Chamado criado com sucesso.",
+      duplicate: resultadoEntrada.duplicate,
+      message: resultadoEntrada.duplicate
+        ? "E-mail já processado."
+        : resultadoEntrada.threaded
+          ? "Mensagem adicionada ao chamado com sucesso."
+          : "Chamado criado com sucesso.",
       ticket_id: resultadoEntrada.ticket.id,
+      message_id: dados.message_id,
+      attachments,
     });
+  } catch (error) {
+    next(error);
+  }
+}
+
+/**
+ * POST /api/webhooks/outlook/attachments/complete
+ * O Flow chama somente depois de o Supabase confirmar a escrita direta.
+ */
+export async function confirmarAnexoOutlook(req, res, next) {
+  try {
+    const result = completeIncomingAttachmentSchema.safeParse(req.body);
+    if (!result.success) return validationError(res, result);
+
+    const attachment = await completeIncomingAttachment({
+      messageId: result.data.message_id,
+      attachmentId: result.data.attachment_id,
+    });
+    return res.status(200).json({ success: true, data: attachment });
+  } catch (error) {
+    next(error);
+  }
+}
+
+/** O Flow deve chamar esta rota em um ramo configurado como "run after failed". */
+export async function falharAnexoOutlook(req, res, next) {
+  try {
+    const result = failIncomingAttachmentSchema.safeParse(req.body);
+    if (!result.success) return validationError(res, result);
+
+    const attachment = await failIncomingAttachment({
+      messageId: result.data.message_id,
+      attachmentId: result.data.attachment_id,
+      failureCode: result.data.failure_code,
+    });
+    return res.status(200).json({ success: true, data: attachment });
   } catch (error) {
     next(error);
   }

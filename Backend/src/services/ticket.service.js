@@ -102,14 +102,33 @@ export async function buscarPorId(id) {
 
   const { data: messages, error: messagesError } = await supabase
     .from("ticket_messages")
-    .select("*")
+    .select(
+      "*,ticket_message_attachments(id,file_name,content_type,file_size,is_inline,content_id,processing_status)",
+    )
     .eq("ticket_id", id)
     .order("data_criacao", { ascending: true });
 
   if (messagesError)
     throw databaseError("buscar as mensagens do chamado", messagesError);
 
-  return { ...ticket, messages: messages || [] };
+  const timelineMessages = (messages || []).map(
+    ({ ticket_message_attachments: attachments, ...message }) => ({
+      ...message,
+      // O contrato da timeline nunca contém storage_path, URL assinada ou erro
+      // interno. Mensagens antigas continuam compatíveis com attachments: [].
+      attachments: (attachments || []).map((attachment) => ({
+        id: attachment.id,
+        file_name: attachment.file_name,
+        content_type: attachment.content_type,
+        file_size: Number(attachment.file_size),
+        is_inline: attachment.is_inline === true,
+        content_id: attachment.content_id || null,
+        processing_status: attachment.processing_status,
+      })),
+    }),
+  );
+
+  return { ...ticket, messages: timelineMessages };
 }
 
 /**
@@ -140,6 +159,22 @@ export async function buscarPorMessageId(
     throw databaseError("verificar a duplicidade do e-mail", messageError);
 
   return message ? { id: message.ticket_id } : null;
+}
+
+/** Busca a ticket_message exata para retomar uploads de uma entrega repetida. */
+export async function buscarMensagemPorOutlookMessageId(
+  messageId,
+  { supabase = getSupabase() } = {},
+) {
+  const { data, error } = await supabase
+    .from("ticket_messages")
+    .select("id,ticket_id,outlook_message_id")
+    .eq("outlook_message_id", messageId)
+    .limit(1)
+    .maybeSingle();
+
+  if (error) throw databaseError("localizar a mensagem do e-mail", error);
+  return data || null;
 }
 
 /**
@@ -184,7 +219,7 @@ async function inserirMensagemDeEntrada(
 
   if (error)
     throw databaseError("registrar a mensagem de entrada do chamado", error);
-  return data;
+  return { ...data, attachments: [] };
 }
 
 /**
@@ -197,7 +232,12 @@ export async function processarEntrada(
 ) {
   const existente = await buscarPorMessageId(dados.message_id, { supabase });
   if (existente) {
-    return { ticket: existente, duplicate: true, threaded: false };
+    return {
+      ticket: existente,
+      message: await buscarMensagemPorOutlookMessageId(dados.message_id, { supabase }),
+      duplicate: true,
+      threaded: false,
+    };
   }
 
   const ticketDaConversa = await buscarPorConversationId(dados.conversation_id, {
@@ -233,13 +273,22 @@ export async function processarEntrada(
     };
   }
 
-  const ticket = await criar(dados, { supabase, helpdeskEmail });
-  if (ticket.duplicate) {
-    return { ticket, duplicate: true, threaded: false };
+  const created = await criar(dados, { supabase, helpdeskEmail });
+  if (created.duplicate) {
+    return {
+      ticket: created.ticket,
+      message: await buscarMensagemPorOutlookMessageId(dados.message_id, { supabase }),
+      duplicate: true,
+      threaded: false,
+    };
   }
-  return { ticket, duplicate: false, threaded: false };
+  return {
+    ticket: created.ticket,
+    message: created.message,
+    duplicate: false,
+    threaded: false,
+  };
 }
-
 /**
  * Criar ticket e primeira mensagem. Se a mensagem falhar, o ticket é removido
  * para que o Power Automate possa repetir a entrega sem deixar dados parciais.
@@ -268,13 +317,14 @@ export async function criar(
   if (ticketError) {
     if (ticketError.code === "23505") {
       const existing = await buscarPorMessageId(dados.message_id, { supabase });
-      if (existing) return { ...existing, duplicate: true };
+      if (existing) return { ticket: existing, duplicate: true };
     }
     throw databaseError("criar o chamado", ticketError);
   }
 
+  let message;
   try {
-    await inserirMensagemDeEntrada(
+    message = await inserirMensagemDeEntrada(
       supabase,
       ticket.id,
       dados,
@@ -295,7 +345,7 @@ export async function criar(
     throw error;
   }
 
-  return ticket;
+  return { ticket, message };
 }
 
 export async function atualizarTicket(id, dados) {
@@ -358,5 +408,5 @@ export async function adicionarMensagem({
     .single();
 
   if (error) throw databaseError("adicionar a mensagem ao chamado", error);
-  return data;
+  return { ...data, attachments: [] };
 }

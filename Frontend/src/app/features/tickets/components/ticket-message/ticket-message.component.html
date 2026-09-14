@@ -28,6 +28,22 @@
       <p class="whitespace-pre-wrap break-words text-[15px] leading-6 text-text-secondary">
         {{ message().corpo_mensagem }}
       </p>
+      @if (regularAttachments().length > 0) {
+        <div class="mt-3 space-y-2" aria-label="Anexos da mensagem">
+          @for (attachment of regularAttachments(); track attachment.id) {
+            <app-file-attachment
+              [name]="attachment.file_name"
+              [size]="attachment.file_size"
+              [contentType]="attachment.content_type"
+              [state]="attachmentState(attachment)"
+              [actionLabel]="isAvailable(attachment) ? 'Abrir' : null"
+              [secondaryActionLabel]="isAvailable(attachment) ? 'Baixar' : null"
+              (actionRequested)="openAttachment(attachment)"
+              (secondaryActionRequested)="openAttachment(attachment, true)"
+            />
+          }
+        </div>
+      }
     </div>
   </article>
 } @else {

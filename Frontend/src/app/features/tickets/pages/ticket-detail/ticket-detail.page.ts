@@ -15,7 +15,6 @@ import {
   requesterName,
   shortTicketId,
 } from '../../../../shared/utils/ticket-formatters';
-import { TicketAttachmentsComponent } from '../../components/ticket-attachments/ticket-attachments.component';
 import { TicketConversationComponent } from '../../components/ticket-conversation/ticket-conversation.component';
 import { TicketPropertiesComponent } from '../../components/ticket-properties/ticket-properties.component';
 import { TicketReplyEditorComponent } from '../../components/ticket-reply-editor/ticket-reply-editor.component';
@@ -26,7 +25,6 @@ import { TicketRequesterCardComponent } from '../../components/ticket-requester-
   imports: [
     RouterLink,
     StatusBadgeComponent,
-    TicketAttachmentsComponent,
     TicketConversationComponent,
     TicketPropertiesComponent,
     TicketReplyEditorComponent,

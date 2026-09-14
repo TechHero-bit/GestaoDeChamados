@@ -48,3 +48,4 @@ database/*
 !database/migrations/
 database/migrations/*
 !database/migrations/008_add_user_email_signatures.sql
+!database/migrations/009_create_ticket_message_attachments.sql

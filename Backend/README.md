@@ -93,3 +93,66 @@ Os tokens permanecem no backend, cifrados no Supabase, e nunca são devolvidos a
 O frontend envia inicialmente apenas a mensagem e o manifesto dos arquivos. Anexos menores que 3 MiB passam individualmente pelo backend; anexos de 3 a 150 MiB usam `createUploadSession` e são enviados pelo navegador diretamente à capability URL temporária do Microsoft Graph em chunks de 3.276.800 bytes. O draft só é enviado depois que o backend lista e confere todos os anexos reais no Graph.
 
 O handle do draft é assinado com a `JWT_SECRET` já existente, expira em duas horas e é vinculado ao usuário autenticado, ticket, mensagem e manifesto. Não há migration ou variável de ambiente adicional para esse fluxo. A capability URL não deve ser registrada em logs nem armazenada no navegador.
+## Anexos recebidos do Outlook
+
+A migration manual [009_create_ticket_message_attachments.sql](../database/migrations/009_create_ticket_message_attachments.sql) deve ser executada **uma vez**, depois das migrations anteriores. Ela cria `ticket_message_attachments`, seus índices e RLS, além do bucket privado `AnexosChamados`. Não altera migrations existentes, não transfere dados e não torna nenhum bucket público.
+
+O bucket mantém o limite configurado no projeto Supabase. Antes de habilitar o Flow, confira no Dashboard do Supabase o *Global file size limit* e o limite específico do bucket; ambos devem acomodar o tamanho corporativo que será aceito. O backend valida metadados até 5 GiB, mas não pode aumentar os limites remotos por conta própria.
+
+### Contrato do fluxo de entrada
+
+`POST /api/webhooks/outlook` continua autenticado por `x-webhook-secret`. O JSON inicial não transporta `contentBytes`:
+
+```json
+{
+  "message_id": "<id da mensagem Outlook>",
+  "conversation_id": "<conversation id>",
+  "remetente_email": "cliente@empresa.com",
+  "remetente_nome": "Cliente",
+  "assunto": "Contrato (chamado)",
+  "corpo_mensagem": "Segue o arquivo.",
+  "data_recebimento": "2026-09-14T12:00:00.000Z",
+  "attachments": [
+    {
+      "attachment_id": "<id estável do Outlook>",
+      "file_name": "contrato.pdf",
+      "content_type": "application/pdf",
+      "file_size": 1468006,
+      "is_inline": false,
+      "content_id": null
+    }
+  ]
+}
+```
+
+A resposta inclui `ticket_id`, `message_id` e um item por anexo. Um arquivo pendente recebe uma capacidade temporária `upload`; ela é destinada **somente ao Power Automate**, não ao frontend:
+
+- `strategy: "standard"`: faça `PUT` diretamente em `upload.url`, com os headers retornados e o corpo binário do arquivo.
+- `strategy: "resumable"`: use TUS no `upload.endpoint`, com os headers retornados, `Upload-Length: upload.upload_length` e chunks de `upload.chunk_size` (6 MiB). Depois do `POST` inicial, envie cada chunk por `PATCH` ao header `Location`, com `Tus-Resumable: 1.0.0`, `Upload-Offset` e `Content-Type: application/offset+octet-stream`.
+
+Após o Storage concluir a escrita, o mesmo Flow chama `POST /api/webhooks/outlook/attachments/complete` com:
+
+```json
+{ "message_id": "<id da mensagem Outlook>", "attachment_id": "<id do Outlook>" }
+```
+
+Se o upload não puder ser concluído, use um ramo *run after = failed/timed out* para chamar `POST /api/webhooks/outlook/attachments/fail` com os mesmos identificadores e `failure_code` igual a `UPLOAD_FAILED`, `SOURCE_UNAVAILABLE` ou `CONTENT_UNAVAILABLE`. A mensagem permanece na timeline e o anexo é exibido como indisponível; o sistema não afirma que um arquivo inexistente está disponível.
+
+### Configuração manual do Power Automate
+
+Use o fluxo de entrada já existente, sem criar outro fluxo:
+
+1. Mantenha o gatilho **Quando um novo email é recebido (V3)** e os campos atuais de mensagem.
+2. Para cada item de **Obter anexos (V2)**, chame **Obter anexo (V2)** com o `Message Id` do gatilho e o `Attachment Id` do item. A ação retorna `id`, `name`, `contentType`, `size`, `contentBytes`, `isInline` e `contentId`.
+3. Monte o array `attachments` somente com `id/name/contentType/size/isInline/contentId` e faça o POST inicial acima. Não inclua `contentBytes` nesse POST nem em logs/variáveis persistidas.
+4. Para cada item retornado pelo backend, associe-o pelo `attachment_id` ao resultado de **Obter anexo (V2)**. Para `standard`, a ação HTTP deve enviar `base64ToBinary(contentBytes)` diretamente à URL assinada. Preserve o header `Content-Type` retornado.
+5. Para `resumable`, configure no **mesmo** fluxo as etapas TUS descritas acima. O conector HTTP genérico precisa conseguir enviar `POST`/`PATCH`, ler `Location`, controlar `Upload-Offset` e produzir chunks binários alinhados a Base64. Se o ambiente do Flow não permitir isso de forma confiável, não envie o arquivo ao backend como fallback: habilite uma etapa/worker compatível com TUS no fluxo existente antes de aceitar anexos maiores que 6 MiB.
+6. Só chame `complete` após a última confirmação do Storage. Configure o ramo de falha conforme a seção anterior.
+
+A ação HTTP usada para upload direto pode exigir licença Premium do Power Automate. Os anexos nunca passam pela Vercel: o JSON de metadados continua abaixo do parser de 100 KB e o binário vai do Flow para o Supabase Storage. Isso evita o limite de payload da Function.
+
+### Leitura no SmartDesk
+
+`GET /api/tickets/:id` devolve cada mensagem com `attachments: []` ou metadados seguros (`id`, nome, MIME, tamanho, `is_inline`, status); `storage_path`, token e URL assinada não são expostos. Imagens CID (`is_inline: true`) são preservadas no banco e não aparecem como arquivo regular na timeline atual, que renderiza o corpo como texto simples.
+
+O frontend abre ou baixa arquivos disponíveis por `GET /api/tickets/:ticketId/attachments/:attachmentId[?download=1]`. A rota exige a sessão existente, confirma que o anexo pertence ao ticket solicitado e só então redireciona para uma URL privada temporária de 60 segundos.

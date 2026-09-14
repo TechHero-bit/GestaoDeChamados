@@ -3,15 +3,18 @@
     <span
       class="flex size-9 shrink-0 items-center justify-center rounded-lg bg-surface-elevated text-text-secondary"
     >
-      <span class="material-symbols-outlined text-xl" aria-hidden="true">description</span>
+      <span class="material-symbols-outlined text-xl" aria-hidden="true">{{ iconName() }}</span>
     </span>
     <div class="min-w-0 flex-1">
       <p class="truncate text-sm font-medium text-text" [title]="name()">{{ name() }}</p>
       <div class="mt-0.5 flex flex-wrap items-center gap-x-2 text-xs text-text-muted">
+        @if (formatType(); as type) {
+          <span>{{ type }}</span><span aria-hidden="true">·</span>
+        }
         <span>{{ formatBytes(size()) }}</span>
         @switch (state()) {
           @case ('pending') {
-            <span>Preparando</span>
+            <span>Processando</span>
           }
           @case ('uploading') {
             <span class="text-accent">Enviando {{ progress() }}%</span>
@@ -20,7 +23,7 @@
             <span class="text-success">Concluído</span>
           }
           @case ('error') {
-            <span class="text-danger">Erro no envio</span>
+            <span class="text-danger">Arquivo indisponível</span>
           }
           @case ('cancelled') {
             <span>Cancelado</span>
@@ -31,6 +34,26 @@
         }
       </div>
     </div>
+    @if (actionLabel()) {
+      <button
+        type="button"
+        class="text-xs font-semibold text-accent transition-colors hover:text-accent-hover disabled:cursor-not-allowed disabled:text-text-muted"
+        [disabled]="actionDisabled()"
+        (click)="actionRequested.emit()"
+      >
+        {{ actionLabel() }}
+      </button>
+    }
+    @if (secondaryActionLabel()) {
+      <button
+        type="button"
+        class="text-xs font-semibold text-text-secondary transition-colors hover:text-accent disabled:cursor-not-allowed disabled:text-text-muted"
+        [disabled]="actionDisabled()"
+        (click)="secondaryActionRequested.emit()"
+      >
+        {{ secondaryActionLabel() }}
+      </button>
+    }
     @if (removable()) {
       <button
         type="button"
