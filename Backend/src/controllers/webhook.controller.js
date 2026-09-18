@@ -28,6 +28,33 @@ function validationError(res, result, message = "Payload inválido.") {
  */
 export async function receberEmailOutlook(req, res, next) {
   try {
+    const rawAttachments = Array.isArray(req.body?.attachments)
+      ? req.body.attachments
+      : [];
+
+    console.log(
+      "[INBOUND_ATTACHMENT_FLOW]",
+      JSON.stringify({
+        message_id_present: Boolean(req.body?.message_id),
+        conversation_id_present: Boolean(req.body?.conversation_id),
+        attachments_field_present: "attachments" in (req.body || {}),
+        attachments_count: rawAttachments.length,
+        attachment_names: rawAttachments.map((a) => a?.file_name || null),
+        attachment_sizes: rawAttachments.map((a) =>
+          typeof a?.file_size === "number" ? a.file_size : null,
+        ),
+        attachment_content_types: rawAttachments.map(
+          (a) => a?.content_type || null,
+        ),
+        attachment_is_inline: rawAttachments.map((a) =>
+          Boolean(a?.is_inline),
+        ),
+        attachment_content_id_present: rawAttachments.map((a) =>
+          Boolean(a?.content_id),
+        ),
+      }),
+    );
+
     const resultado = webhookPayloadSchema.safeParse(req.body);
     if (!resultado.success) return validationError(res, resultado);
 
