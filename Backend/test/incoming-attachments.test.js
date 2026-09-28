@@ -4,6 +4,7 @@ import {
   completeIncomingAttachment,
   DIRECT_UPLOAD_RECOMMENDED_MAX_BYTES,
   getIncomingAttachmentForTicket,
+  INCOMING_ATTACHMENT_MAX_BYTES,
   incomingAttachmentStoragePath,
   prepareIncomingAttachments,
   sanitizeStorageFileName,
@@ -18,6 +19,7 @@ class AttachmentDatabase {
     ];
     this.attachments = [];
     this.objects = new Map();
+    this.storageError = null;
     this.storage = {
       from: (bucket) => {
         assert.equal(bucket, "AnexosChamados");
@@ -27,6 +29,7 @@ class AttachmentDatabase {
             error: null,
           }),
           list: async (folder, { search }) => {
+            if (this.storageError) return { data: null, error: this.storageError };
             const path = `${folder}/${search}`;
             const object = this.objects.get(path);
             return { data: object ? [{ name: search, metadata: object }] : [], error: null };
@@ -197,6 +200,242 @@ test("falha de confirmação marca o anexo como Falhou sem fingir disponibilidad
     { statusCode: 409 },
   );
   assert.equal(database.attachments[0].processing_status, "Falhou");
+  assert.equal(database.attachments[0].processing_error, "OBJECT_NOT_FOUND");
+});
+
+test("Caso 1 — PDF com divergência de tamanho entre Graph e Storage é marcado como Disponível", async () => {
+  const database = new AttachmentDatabase();
+  const [prepared] = await prepareIncomingAttachments(
+    {
+      ticket,
+      message,
+      attachments: [
+        attachment({
+          attachment_id: "pdf-attachment-1",
+          file_name: "documento.pdf",
+          content_type: "application/pdf",
+          file_size: 97497, // Tamanho declarado pelo Microsoft Graph
+        }),
+      ],
+    },
+    { supabase: database },
+  );
+
+  assert.equal(prepared.processing_status, "Pendente");
+  const row = database.attachments[0];
+
+  // Storage contém os bytes reais de contentBytes enviados pelo Power Automate
+  database.objects.set(row.storage_path, { size: 97261, mimetype: "application/pdf" });
+
+  const completed = await completeIncomingAttachment(
+    { messageId: "outlook-message-1", attachmentId: "pdf-attachment-1" },
+    { supabase: database },
+  );
+
+  assert.equal(completed.processing_status, "Disponivel");
+  assert.equal(database.attachments[0].processing_status, "Disponivel");
+  assert.equal(database.attachments[0].processing_error, null);
+  assert.equal(completed.file_size, 97497); // Metadado original do Graph preservado
+});
+
+test("Caso 1 — PNG inline com divergência de tamanho entre Graph e Storage é marcado como Disponível", async () => {
+  const database = new AttachmentDatabase();
+  await prepareIncomingAttachments(
+    {
+      ticket,
+      message,
+      attachments: [
+        attachment({
+          attachment_id: "png-inline-1",
+          file_name: "imagem.png",
+          content_type: "image/png",
+          file_size: 142587, // Tamanho declarado pelo Microsoft Graph
+          is_inline: true,
+          content_id: "image001.png@01D",
+        }),
+      ],
+    },
+    { supabase: database },
+  );
+
+  const row = database.attachments[0];
+  database.objects.set(row.storage_path, { size: 142344, mimetype: "image/png" });
+
+  const completed = await completeIncomingAttachment(
+    { messageId: "outlook-message-1", attachmentId: "png-inline-1" },
+    { supabase: database },
+  );
+
+  assert.equal(completed.processing_status, "Disponivel");
+  assert.equal(completed.is_inline, true);
+  assert.equal(completed.content_id, "image001.png@01D");
+  assert.equal(database.attachments[0].processing_status, "Disponivel");
+  assert.equal(database.attachments[0].processing_error, null);
+});
+
+test("Caso 2 — objeto inexistente no Storage marca anexo como Falhou com HTTP 409", async () => {
+  const database = new AttachmentDatabase();
+  await prepareIncomingAttachments(
+    { ticket, message, attachments: [attachment()] },
+    { supabase: database },
+  );
+
+  await assert.rejects(
+    completeIncomingAttachment(
+      { messageId: "outlook-message-1", attachmentId: "outlook-attachment-1" },
+      { supabase: database },
+    ),
+    (error) => {
+      assert.equal(error.statusCode, 409);
+      assert.match(error.message, /não foi encontrado no armazenamento/i);
+      return true;
+    },
+  );
+
+  assert.equal(database.attachments[0].processing_status, "Falhou");
+  assert.equal(database.attachments[0].processing_error, "OBJECT_NOT_FOUND");
+});
+
+test("Caso 3 — tamanho do objeto inválido no Storage marca anexo como Falhou com HTTP 409", async () => {
+  const invalidSizes = [0, -10, NaN, null, "invalido", undefined];
+
+  for (const size of invalidSizes) {
+    const database = new AttachmentDatabase();
+    await prepareIncomingAttachments(
+      { ticket, message, attachments: [attachment()] },
+      { supabase: database },
+    );
+    const row = database.attachments[0];
+    database.objects.set(row.storage_path, { size, mimetype: "application/pdf" });
+
+    await assert.rejects(
+      completeIncomingAttachment(
+        { messageId: "outlook-message-1", attachmentId: "outlook-attachment-1" },
+        { supabase: database },
+      ),
+      (error) => {
+        assert.equal(error.statusCode, 409);
+        assert.match(error.message, /tamanho do arquivo enviado é inválido/i);
+        return true;
+      },
+    );
+
+    assert.equal(database.attachments[0].processing_status, "Falhou");
+    assert.equal(database.attachments[0].processing_error, "INVALID_SIZE");
+  }
+});
+
+test("Caso 3 — tamanho do objeto excedendo limite máximo marca anexo como Falhou com HTTP 409", async () => {
+  const database = new AttachmentDatabase();
+  await prepareIncomingAttachments(
+    { ticket, message, attachments: [attachment()] },
+    { supabase: database },
+  );
+  const row = database.attachments[0];
+  database.objects.set(row.storage_path, { size: INCOMING_ATTACHMENT_MAX_BYTES + 1, mimetype: "application/pdf" });
+
+  await assert.rejects(
+    completeIncomingAttachment(
+      { messageId: "outlook-message-1", attachmentId: "outlook-attachment-1" },
+      { supabase: database },
+    ),
+    (error) => {
+      assert.equal(error.statusCode, 409);
+      assert.match(error.message, /excede o limite suportado/i);
+      return true;
+    },
+  );
+
+  assert.equal(database.attachments[0].processing_status, "Falhou");
+  assert.equal(database.attachments[0].processing_error, "SIZE_EXCEEDED");
+});
+
+test("Caso 4 — objeto já disponível retorna sem reprocessar mantendo idempotência", async () => {
+  const database = new AttachmentDatabase();
+  await prepareIncomingAttachments(
+    { ticket, message, attachments: [attachment({ file_size: 97497 })] },
+    { supabase: database },
+  );
+  const row = database.attachments[0];
+  database.objects.set(row.storage_path, { size: 97261, mimetype: "application/pdf" });
+
+  const firstComplete = await completeIncomingAttachment(
+    { messageId: "outlook-message-1", attachmentId: "outlook-attachment-1" },
+    { supabase: database },
+  );
+  assert.equal(firstComplete.processing_status, "Disponivel");
+
+  const originalAvailableAt = database.attachments[0].available_at;
+  assert.ok(originalAvailableAt);
+
+  // Segunda chamada (idempotente)
+  const secondComplete = await completeIncomingAttachment(
+    { messageId: "outlook-message-1", attachmentId: "outlook-attachment-1" },
+    { supabase: database },
+  );
+
+  assert.equal(secondComplete.processing_status, "Disponivel");
+  assert.equal(database.attachments[0].available_at, originalAvailableAt);
+});
+
+test("Caso 5 — preserva ou atualiza content_type conforme metadados do Storage", async () => {
+  // Subcaso A: Storage informa mimetype específico
+  const db1 = new AttachmentDatabase();
+  await prepareIncomingAttachments(
+    {
+      ticket,
+      message,
+      attachments: [attachment({ content_type: "application/octet-stream", file_size: 97497 })],
+    },
+    { supabase: db1 },
+  );
+  db1.objects.set(db1.attachments[0].storage_path, { size: 97261, mimetype: "application/pdf" });
+  const completed1 = await completeIncomingAttachment(
+    { messageId: "outlook-message-1", attachmentId: "outlook-attachment-1" },
+    { supabase: db1 },
+  );
+  assert.equal(completed1.content_type, "application/pdf");
+
+  // Subcaso B: Storage informa application/octet-stream genérico, preserva o tipo original do Outlook
+  const db2 = new AttachmentDatabase();
+  await prepareIncomingAttachments(
+    {
+      ticket,
+      message,
+      attachments: [attachment({ content_type: "application/pdf", file_size: 97497 })],
+    },
+    { supabase: db2 },
+  );
+  db2.objects.set(db2.attachments[0].storage_path, { size: 97261, mimetype: "application/octet-stream" });
+  const completed2 = await completeIncomingAttachment(
+    { messageId: "outlook-message-1", attachmentId: "outlook-attachment-1" },
+    { supabase: db2 },
+  );
+  assert.equal(completed2.content_type, "application/pdf");
+});
+
+test("erro ao consultar o Storage retorna 502 sem marcar anexo como Falhou", async () => {
+  const database = new AttachmentDatabase();
+  await prepareIncomingAttachments(
+    { ticket, message, attachments: [attachment()] },
+    { supabase: database },
+  );
+  database.storageError = new Error("Falha temporária de rede no Storage");
+
+  await assert.rejects(
+    completeIncomingAttachment(
+      { messageId: "outlook-message-1", attachmentId: "outlook-attachment-1" },
+      { supabase: database },
+    ),
+    (error) => {
+      assert.equal(error.statusCode, 502);
+      assert.match(error.message, /Não foi possível verificar o arquivo enviado/i);
+      return true;
+    },
+  );
+
+  // Não deve marcar como Falhou pois foi um erro transitório de infraestrutura
+  assert.equal(database.attachments[0].processing_status, "Pendente");
 });
 
 test("anexo só pode ser aberto no ticket ao qual sua mensagem pertence", async () => {

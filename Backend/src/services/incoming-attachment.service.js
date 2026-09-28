@@ -354,16 +354,22 @@ export async function completeIncomingAttachment(
   if (row.processing_status === AVAILABLE_STATUS) return toPublicIncomingAttachment(row);
 
   const object = await storageObjectForAttachment(supabase, row);
-  const objectSize = Number(object?.metadata?.size);
 
-  if (!object || !Number.isSafeInteger(objectSize)) {
+  if (!object) {
     await markFailed(supabase, row, "OBJECT_NOT_FOUND");
     throw unavailableAttachmentError("O arquivo enviado não foi encontrado no armazenamento.");
   }
 
-  if (objectSize !== Number(row.file_size)) {
-    await markFailed(supabase, row, "SIZE_MISMATCH");
-    throw unavailableAttachmentError("O tamanho do arquivo enviado não corresponde ao anexo recebido.");
+  const objectSize = Number(object?.metadata?.size);
+
+  if (!Number.isSafeInteger(objectSize) || objectSize <= 0) {
+    await markFailed(supabase, row, "INVALID_SIZE");
+    throw unavailableAttachmentError("O tamanho do arquivo enviado é inválido.");
+  }
+
+  if (objectSize > INCOMING_ATTACHMENT_MAX_BYTES) {
+    await markFailed(supabase, row, "SIZE_EXCEEDED");
+    throw unavailableAttachmentError("O tamanho do arquivo enviado excede o limite suportado.");
   }
 
   const actualContentType = normalizeContentType(object.metadata?.mimetype);

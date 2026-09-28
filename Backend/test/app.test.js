@@ -84,6 +84,35 @@ test("webhook valida o payload antes de acessar o banco", async () => {
   assert.ok(Array.isArray(body.errors));
 });
 
+test("webhook de conclusão de anexo rejeita requisição sem segredo", async () => {
+  const response = await fetch(`${baseUrl}/api/webhooks/outlook/attachments/complete`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      message_id: "msg-1",
+      attachment_id: "att-1",
+    }),
+  });
+  assert.equal(response.status, 401);
+  assert.equal((await response.json()).success, false);
+});
+
+test("webhook de conclusão de anexo valida contrato exigindo message_id e attachment_id", async () => {
+  const response = await fetch(`${baseUrl}/api/webhooks/outlook/attachments/complete`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-webhook-secret": "test-webhook-secret",
+    },
+    body: JSON.stringify({ message_id: "" }),
+  });
+  const body = await response.json();
+  assert.equal(response.status, 400);
+  assert.equal(body.success, false);
+  assert.equal(body.message, "Payload inválido.");
+  assert.ok(Array.isArray(body.errors));
+});
+
 // ==========================================
 // 3. Proteção das APIs de tickets (exigem auth)
 // ==========================================
