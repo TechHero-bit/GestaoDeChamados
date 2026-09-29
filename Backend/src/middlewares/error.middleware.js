@@ -32,11 +32,72 @@ export function errorMiddleware(err, req, res, _next) {
           ...(safeAttachmentDebug ? { attachment_debug: safeAttachmentDebug } : {}),
         }
       : {};
+
+    // [TEMPORÁRIO - DIAGNÓSTICO] Expõe dados seguros do Graph na response HTTP.
+    // Ativado somente quando o erro possuir operation (erros de assinatura/draft).
+    // NUNCA expõe: token, secret, HTML, contentBytes, messageId completo.
+    const graphDetails = err.graphDetails && typeof err.graphDetails === "object"
+      ? err.graphDetails
+      : null;
+
+    // `err.operation` é populado por signatureGraphError para todas as etapas instrumentadas
+    const safeOperation = typeof err.operation === "string" && /^[A-Za-z0-9_]{1,50}$/.test(err.operation)
+      ? err.operation
+      : (graphDetails?.operation && /^[A-Za-z0-9_]{1,50}$/.test(graphDetails.operation)
+          ? graphDetails.operation
+          : null);
+
+    let diagnosticBlock = null;
+    if (safeOperation !== null) {
+      const safeStatus = typeof err.graphStatus === "number"
+        ? err.graphStatus
+        : (typeof graphDetails?.status === "number" ? graphDetails.status : null);
+
+      const rawCode = graphDetails?.code;
+      const safeCode = typeof rawCode === "string" && /^[A-Za-z0-9_.-]{1,100}$/.test(rawCode.trim())
+        ? rawCode.trim()
+        : (typeof err.graphError === "string" && /^[A-Za-z0-9_.-]{1,100}$/.test(err.graphError)
+            ? err.graphError
+            : null);
+
+      const rawMessage = graphDetails?.message;
+      const safeMessage = typeof rawMessage === "string" && rawMessage.trim().length > 0
+        ? rawMessage.trim().slice(0, 500)
+        : null;
+
+      const rawInnerCode = graphDetails?.innerErrorCode;
+      const safeInnerCode = typeof rawInnerCode === "string" && /^[A-Za-z0-9_.-]{1,100}$/.test(rawInnerCode.trim())
+        ? rawInnerCode.trim()
+        : null;
+
+      const rawRequestId = graphDetails?.requestId;
+      const safeRequestId = typeof rawRequestId === "string" && rawRequestId.trim().length > 0
+        ? rawRequestId.trim().slice(0, 200)
+        : null;
+
+      const rawClientRequestId = graphDetails?.clientRequestId;
+      const safeClientRequestId = typeof rawClientRequestId === "string" && rawClientRequestId.trim().length > 0
+        ? rawClientRequestId.trim().slice(0, 200)
+        : null;
+
+      diagnosticBlock = {
+        operation: safeOperation,
+        status: safeStatus,
+        code: safeCode,
+        message: safeMessage,
+        innerErrorCode: safeInnerCode,
+        requestId: safeRequestId,
+        clientRequestId: safeClientRequestId,
+      };
+    }
+
+
     return res.status(statusCode).json({
       success: false,
       message,
       code: errorCode,
       ...attachmentDetails,
+      ...(diagnosticBlock ? { diagnostic: diagnosticBlock } : {}),
     });
   }
 

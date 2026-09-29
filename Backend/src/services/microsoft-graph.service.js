@@ -232,7 +232,15 @@ function isPreSendNetworkError(error) {
 }
 const SIGNATURE_CONTENT_ID = "smartdesk-signature";
 
-function signatureGraphError(publicCode, message, signatureDebug, graphDetails = {}) {
+function signatureGraphError(publicCode, message, signatureDebug, graphDetails = {}, operation = null) {
+  // Valida operation para evitar exposição de valores arbitrários
+  const safeOperation = typeof operation === "string" && /^[A-Za-z0-9_]{1,50}$/.test(operation)
+    ? operation
+    : null;
+  // Inclui operation em graphDetails para que o middleware possa lê-la
+  const enrichedDetails = safeOperation && Object.keys(graphDetails).length > 0
+    ? { ...graphDetails, operation: safeOperation }
+    : graphDetails;
   return Object.assign(new Error(message), {
     statusCode: 502,
     publicCode,
@@ -240,9 +248,10 @@ function signatureGraphError(publicCode, message, signatureDebug, graphDetails =
     microsoftDiagnosticError: true,
     diagnosticCode: publicCode,
     signatureDebug: { ...signatureDebug },
-    ...(graphDetails.status ? { graphStatus: graphDetails.status } : {}),
-    ...(graphDetails.code ? { graphError: graphDetails.code } : {}),
-    ...(Object.keys(graphDetails).length > 0 ? { graphDetails } : {}),
+    ...(safeOperation ? { operation: safeOperation } : {}),
+    ...(enrichedDetails.status ? { graphStatus: enrichedDetails.status } : {}),
+    ...(enrichedDetails.code ? { graphError: enrichedDetails.code } : {}),
+    ...(Object.keys(enrichedDetails).length > 0 ? { graphDetails: enrichedDetails } : {}),
   });
 }
 
@@ -323,6 +332,8 @@ async function executeInlineSignatureDraft(
       "SIGNATURE_DRAFT_FAILED",
       "Não foi possível criar o rascunho da resposta com assinatura.",
       signatureDebug,
+      { status: null, code: "NETWORK_ERROR", message: error?.message?.slice(0, 300) || null, requestId: null, clientRequestId: null },
+      "createReply",
     );
   }
 
@@ -344,6 +355,7 @@ async function executeInlineSignatureDraft(
       "A Microsoft não aceitou a criação do rascunho da resposta.",
       signatureDebug,
       { status: response.status, ...errorDetails },
+      "createReply",
     );
   }
 
@@ -361,6 +373,8 @@ async function executeInlineSignatureDraft(
       "SIGNATURE_DRAFT_FAILED",
       "A Microsoft não retornou o identificador do rascunho.",
       signatureDebug,
+      { status: response.status, code: "MissingDraftId", message: null, requestId: null, clientRequestId: null },
+      "createReply",
     );
   }
   signatureDebug.draft_created = true;
@@ -392,6 +406,8 @@ async function executeInlineSignatureDraft(
       "SIGNATURE_DRAFT_FAILED",
       "Não foi possível atualizar o rascunho da resposta.",
       signatureDebug,
+      { status: null, code: "NETWORK_ERROR", message: error?.message?.slice(0, 300) || null, requestId: null, clientRequestId: null },
+      "patchDraft",
     );
   }
 
@@ -412,6 +428,7 @@ async function executeInlineSignatureDraft(
       "A Microsoft não aceitou o HTML do rascunho da resposta.",
       signatureDebug,
       { status: response.status, ...errorDetails },
+      "patchDraft",
     );
   }
 
@@ -442,6 +459,8 @@ async function executeInlineSignatureDraft(
       "SIGNATURE_ATTACHMENT_FAILED",
       "Não foi possível adicionar a assinatura ao rascunho.",
       signatureDebug,
+      { status: null, code: "NETWORK_ERROR", message: error?.message?.slice(0, 300) || null, requestId: null, clientRequestId: null },
+      "addInlineSignature",
     );
   }
 
@@ -461,6 +480,7 @@ async function executeInlineSignatureDraft(
       "A Microsoft não aceitou a assinatura inline.",
       signatureDebug,
       { status: response.status, ...errorDetails },
+      "addInlineSignature",
     );
   }
   signatureDebug.attachment_created = true;
@@ -484,6 +504,8 @@ async function executeInlineSignatureDraft(
       "SIGNATURE_SEND_FAILED",
       "Não foi possível enviar o rascunho com assinatura.",
       signatureDebug,
+      { status: null, code: "NETWORK_ERROR", message: error?.message?.slice(0, 300) || null, requestId: null, clientRequestId: null },
+      "sendDraft",
     );
   }
 
@@ -503,6 +525,7 @@ async function executeInlineSignatureDraft(
       "A Microsoft não aceitou o envio do rascunho com assinatura.",
       signatureDebug,
       { status: response.status, ...errorDetails },
+      "sendDraft",
     );
   }
   signatureDebug.draft_sent = true;
