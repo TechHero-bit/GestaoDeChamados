@@ -162,11 +162,19 @@ export async function sendAndPersistTicketReply(
 
   let provider;
   let senderEmail;
+  let fallbackUsed = false;
 
   if (connection.connected) {
     try {
       const graphPayload = signatureAppended
-        ? { messageId, message: mensagemTimeline, html: mensagemEmailHtml, inlineAttachment }
+        ? {
+            messageId,
+            message: mensagemTimeline,
+            html: mensagemEmailHtml,
+            inlineAttachment,
+            to: ticket.remetente_email,
+            subject: replySubject(ticket.assunto),
+          }
         : { messageId, message: mensagemTimeline, html: mensagemEmailHtml };
       const graphResult = await replyWithMicrosoftGraph(userId, graphPayload);
       if (signatureDebug.enabled) {
@@ -174,6 +182,9 @@ export async function sendAndPersistTicketReply(
           ...signatureDebug,
           ...(graphResult?.signatureDebug || {}),
         };
+      }
+      if (graphResult?.fallbackUsed) {
+        fallbackUsed = true;
       }
       provider = "microsoft_graph";
       senderEmail = microsoftSenderEmail(connection, helpdeskEmail);
@@ -220,5 +231,10 @@ export async function sendAndPersistTicketReply(
     );
   }
 
-  return { message: persistedMessage, provider, signatureDebug };
+  return {
+    message: persistedMessage,
+    provider,
+    signatureDebug,
+    ...(fallbackUsed ? { fallbackUsed: true } : {}),
+  };
 }

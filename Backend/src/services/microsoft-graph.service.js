@@ -389,6 +389,152 @@ async function createReplyWithMailboxMoveRetry(
     "createReply",
   );
 }
+/**
+ * Fallback exclusivo para envio de resposta via POST /me/sendMail quando
+ * o Microsoft Graph recusa POST createReply com 503 ErrorMailboxMoveInProgress
+ * e todos os retries já foram esgotados.
+ *
+ * Preserva:
+ * - Destinatário correto (to)
+ * - Assunto correto com prefixo RE: quando aplicável (subject)
+ * - Corpo HTML seguro com a tag de assinatura inline (html)
+ * - Imagem da assinatura como fileAttachment inline com contentId correspondente (inlineAttachment)
+ *
+ * Restrições e segurança:
+ * - Acionado SOMENTE quando status === 503 && error.code === "ErrorMailboxMoveInProgress"
+ * - NENHUM draft foi criado (draft_created === false), garantindo que não há risco de e-mails duplicados
+ * - Registra log de diagnóstico seguro da operação "sendMail_fallback"
+ * - Em caso de falha, lança SIGNATURE_DRAFT_MAILBOX_MOVE_FALLBACK_FAILED
+ * - NUNCA expõe access tokens, refresh tokens, secrets ou HTML completo nos logs
+ */
+export async function sendFallbackReply({
+  fetchImpl = globalThis.fetch,
+  accessToken,
+  to,
+  subject,
+  html,
+  inlineAttachment,
+  signatureDebug,
+  originalErrorDetails,
+}) {
+  const messagePayload = {
+    subject,
+    body: {
+      contentType: "HTML",
+      content: html,
+    },
+    toRecipients: [
+      {
+        emailAddress: {
+          address: to,
+        },
+      },
+    ],
+  };
+
+  if (inlineAttachment?.contentBytes) {
+    messagePayload.attachments = [
+      buildSignatureAttachmentPayload({
+        contentBytes: inlineAttachment.contentBytes,
+        contentId: inlineAttachment.contentId || SIGNATURE_CONTENT_ID,
+      }),
+    ];
+  }
+
+  const payload = {
+    message: messagePayload,
+    saveToSentItems: true,
+  };
+
+  let response;
+  try {
+    response = await fetchImpl(GRAPH_SEND_MAIL_URL, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(15000),
+    });
+  } catch (error) {
+    logGraphDiagnostic({
+      operation: "sendMail_fallback",
+      status: "network_error",
+      message: error?.message || "Erro de rede no fallback sendMail.",
+      fallbackUsed: true,
+    });
+    throw signatureGraphError(
+      "SIGNATURE_DRAFT_MAILBOX_MOVE_FALLBACK_FAILED",
+      "O Microsoft 365 recusou o envio original devido à movimentação interna da caixa postal e o mecanismo alternativo de envio também falhou por erro de comunicação.",
+      { ...signatureDebug, fallback_attempted: true, fallback_failed: true },
+      {
+        status: null,
+        code: "NETWORK_ERROR",
+        message: error?.message?.slice(0, 300) || null,
+        requestId: null,
+        clientRequestId: null,
+        fallbackUsed: true,
+        originalError: originalErrorDetails,
+      },
+      "sendMail_fallback",
+    );
+  }
+
+  if (response.status !== 202) {
+    const errorDetails = await readGraphErrorDetails(response);
+    logGraphDiagnostic({
+      operation: "sendMail_fallback",
+      status: response.status,
+      code: errorDetails.code,
+      message: errorDetails.message,
+      innerErrorCode: errorDetails.innerErrorCode,
+      requestId: errorDetails.requestId,
+      clientRequestId: errorDetails.clientRequestId,
+      fallbackUsed: true,
+    });
+    throw signatureGraphError(
+      "SIGNATURE_DRAFT_MAILBOX_MOVE_FALLBACK_FAILED",
+      "O Microsoft 365 recusou o envio da resposta: a caixa postal está em movimentação interna e a tentativa de envio alternativo também foi recusada.",
+      { ...signatureDebug, fallback_attempted: true, fallback_failed: true },
+      {
+        status: response.status,
+        code: errorDetails.code,
+        message: errorDetails.message,
+        innerErrorCode: errorDetails.innerErrorCode,
+        requestId: errorDetails.requestId,
+        clientRequestId: errorDetails.clientRequestId,
+        fallbackUsed: true,
+        originalError: originalErrorDetails,
+      },
+      "sendMail_fallback",
+    );
+  }
+
+  logGraphDiagnostic({
+    operation: "sendMail_fallback",
+    status: response.status,
+    code: "FallbackSuccess",
+    message: "Fallback sendMail enviado com sucesso após ErrorMailboxMoveInProgress.",
+    fallbackUsed: true,
+  });
+
+  const updatedSignatureDebug = {
+    ...signatureDebug,
+    draft_created: false,
+    attachment_created: Boolean(inlineAttachment),
+    attachment_inline: Boolean(inlineAttachment),
+    draft_sent: true,
+    fallback_used: true,
+  };
+
+  return {
+    status: 202,
+    fallbackUsed: true,
+    signatureDebug: updatedSignatureDebug,
+  };
+}
+
 const SIGNATURE_CONTENT_ID = "smartdesk-signature";
 
 function signatureGraphError(publicCode, message, signatureDebug, graphDetails = {}, operation = null) {
@@ -441,7 +587,7 @@ async function readResponseJson(response) {
 
 async function executeInlineSignatureDraft(
   accessToken,
-  { messageId, html, inlineAttachment },
+  { messageId, html, inlineAttachment, to, subject },
   fetchImpl,
 ) {
   const signatureDebug = createInlineSignatureDebug(html, inlineAttachment);
@@ -473,13 +619,49 @@ async function executeInlineSignatureDraft(
   // createReply com retry para 503 ErrorMailboxMoveInProgress.
   // O retry acontece APENAS aqui, antes de qualquer draft existir,
   // eliminando qualquer risco de duplicar envios.
-  const createResponse = await createReplyWithMailboxMoveRetry(
-    fetchImpl,
-    accessToken,
-    messageId,
-    signatureDebug,
-    htmlMeta,
-  );
+  let createResponse;
+  try {
+    createResponse = await createReplyWithMailboxMoveRetry(
+      fetchImpl,
+      accessToken,
+      messageId,
+      signatureDebug,
+      htmlMeta,
+    );
+  } catch (error) {
+    // Fallback restrito EXCLUSIVAMENTE para 503 + ErrorMailboxMoveInProgress
+    // quando todos os retries de createReply foram esgotados.
+    // Nenhum draft foi criado (signatureDebug.draft_created === false).
+    const isMailboxMove =
+      error?.publicCode === "SIGNATURE_DRAFT_MAILBOX_MOVE" &&
+      (error?.graphStatus === 503 || error?.graphDetails?.status === 503) &&
+      (error?.graphError === "ErrorMailboxMoveInProgress" ||
+        error?.graphDetails?.code === "ErrorMailboxMoveInProgress");
+
+    if (
+      isMailboxMove &&
+      signatureDebug.draft_created === false &&
+      typeof to === "string" &&
+      to.trim().length > 0
+    ) {
+      return await sendFallbackReply({
+        fetchImpl,
+        accessToken,
+        to: to.trim(),
+        subject:
+          typeof subject === "string" && subject.trim().length > 0
+            ? subject.trim()
+            : "Resposta ao chamado",
+        html,
+        inlineAttachment,
+        signatureDebug,
+        originalErrorDetails: error.graphDetails,
+      });
+    }
+
+    // Qualquer outro erro não é elegível para fallback e segue o fluxo original
+    throw error;
+  }
 
   const draft = await readResponseJson(createResponse);
   const draftId = typeof draft?.id === "string" && draft.id.trim() ? draft.id : null;
@@ -661,7 +843,7 @@ async function executeInlineSignatureDraft(
  */
 export async function replyToMicrosoftMessage(
   userId,
-  { messageId, message, html, inlineAttachment },
+  { messageId, message, html, inlineAttachment, to, subject },
   { getAccessToken = getValidMicrosoftAccessToken, fetchImpl = globalThis.fetch } = {},
 ) {
   if (typeof messageId !== "string" || messageId.trim().length === 0) {
@@ -718,7 +900,7 @@ export async function replyToMicrosoftMessage(
   if (inlineAttachment) {
     return executeInlineSignatureDraft(
       accessToken,
-      { messageId, html, inlineAttachment },
+      { messageId, html, inlineAttachment, to, subject },
       fetchImpl,
     );
   }
