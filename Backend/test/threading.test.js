@@ -195,6 +195,66 @@ test("conversation_id é obrigatório e deve ser uma string não vazia", () => {
   assert.equal(webhookPayloadSchema.safeParse(base).success, true);
 });
 
+test("validação de assunto aceita formato legado e formato de produção, rejeitando inválidos", () => {
+  const base = payload("MSG-1", "CONV-1");
+
+  // TESTE 1 — legado válido
+  assert.equal(
+    webhookPayloadSchema.safeParse({ ...base, assunto: "(chamado) Teste" }).success,
+    true,
+  );
+
+  // TESTE 2 — legado válido no meio do assunto
+  assert.equal(
+    webhookPayloadSchema.safeParse({
+      ...base,
+      assunto: "Problema urgente (chamado)",
+    }).success,
+    true,
+  );
+
+  // TESTE 3 — produção válido
+  assert.equal(
+    webhookPayloadSchema.safeParse({
+      ...base,
+      assunto: "Centauro / Interno: Chamado - Teste",
+    }).success,
+    true,
+  );
+
+  // TESTE 4 — produção válido com descrição
+  assert.equal(
+    webhookPayloadSchema.safeParse({
+      ...base,
+      assunto: "Centauro / Interno: Chamado - Computador não liga",
+    }).success,
+    true,
+  );
+
+  // TESTE 5 — assunto inválido
+  const resInvalido1 = webhookPayloadSchema.safeParse({
+    ...base,
+    assunto: "Problema no computador",
+  });
+  assert.equal(resInvalido1.success, false);
+  assert.equal(
+    resInvalido1.error.errors[0].message,
+    'O assunto deve conter "(chamado)" ou "Centauro / Interno: Chamado -".',
+  );
+
+  // TESTE 6 — assunto inválido
+  const resInvalido2 = webhookPayloadSchema.safeParse({
+    ...base,
+    assunto: "Solicitação de acesso",
+  });
+  assert.equal(resInvalido2.success, false);
+  assert.equal(
+    resInvalido2.error.errors[0].message,
+    'O assunto deve conter "(chamado)" ou "Centauro / Interno: Chamado -".',
+  );
+});
+
+
 test("reply envia MSG-2 e mantém fallback para ticket legado", async () => {
   const nativeFetch = globalThis.fetch;
   const previousUrl = process.env.POWER_AUTOMATE_REPLY_URL;

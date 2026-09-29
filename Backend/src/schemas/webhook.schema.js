@@ -87,9 +87,19 @@ export const webhookPayloadSchema = z.object({
     .trim()
     .min(1, "assunto não pode ser vazio.")
     .max(1000, "assunto é muito longo.")
-    .refine((val) => val.toLowerCase().includes("(chamado)"), {
-      message: 'O assunto deve conter "(chamado)".',
-    }),
+    .refine(
+      (val) => {
+        const lower = val.toLowerCase();
+        return (
+          lower.includes("(chamado)") ||
+          lower.includes("centauro / interno: chamado -")
+        );
+      },
+      {
+        message:
+          'O assunto deve conter "(chamado)" ou "Centauro / Interno: Chamado -".',
+      },
+    ),
 
   corpo_mensagem: z
     .string({ required_error: "corpo_mensagem é obrigatório." })
