@@ -198,3 +198,76 @@ test("patchDraft com falha registra etapa patchDraft e preserva diagnóstico", a
   assert.equal(allLogs.includes("status=400"), true);
   assert.equal(allLogs.includes("code=ErrorInvalidRequest"), true);
 });
+
+test("createReply com HTTP 400, 403 ou 500 emite diagnóstico via console.error com todos os campos requeridos", async () => {
+  const errorLogs = [];
+  const originalConsoleError = console.error;
+  console.error = (...args) => errorLogs.push(args.join(" "));
+
+  try {
+    await assert.rejects(
+      replyToMicrosoftMessage(
+        USER_ID,
+        {
+          messageId: "AAMkADk0Mz...",
+          message: "Teste resposta",
+          html: "<div>Corpo</div><br><img src=\"cid:smartdesk-signature\">",
+          inlineAttachment: {
+            contentId: "smartdesk-signature",
+            contentBytes: DUMMY_PNG_BASE64,
+          },
+        },
+        {
+          getAccessToken: async () => "dummy-token",
+          fetchImpl: async (url) => {
+            if (url.includes("/createReply")) {
+              return new Response(
+                JSON.stringify({
+                  error: {
+                    code: "ErrorAccessDenied",
+                    message: "Access is denied. Check credentials and try again.",
+                    innerError: {
+                      "request-id": "req-auth-999",
+                      "client-request-id": "client-auth-888",
+                    },
+                  },
+                }),
+                {
+                  status: 403,
+                  headers: {
+                    "Content-Type": "application/json",
+                    "request-id": "req-header-top",
+                    "client-request-id": "client-header-top",
+                  },
+                },
+              );
+            }
+            return new Response("{}", { status: 200 });
+          },
+        },
+      ),
+      (error) => {
+        assert.equal(error.statusCode, 502);
+        assert.equal(error.publicCode, "SIGNATURE_DRAFT_FAILED");
+        assert.equal(error.graphStatus, 403);
+        assert.equal(error.graphError, "ErrorAccessDenied");
+        assert.equal(error.graphDetails.code, "ErrorAccessDenied");
+        assert.equal(error.graphDetails.message, "Access is denied. Check credentials and try again.");
+        assert.equal(error.graphDetails.requestId, "req-header-top");
+        assert.equal(error.graphDetails.clientRequestId, "client-header-top");
+        return true;
+      },
+    );
+  } finally {
+    console.error = originalConsoleError;
+  }
+
+  const output = errorLogs.join("\n");
+  assert.equal(output.includes("MICROSOFT_GRAPH_DIAGNOSTIC"), true);
+  assert.equal(output.includes("operation=createReply"), true);
+  assert.equal(output.includes("status=403"), true);
+  assert.equal(output.includes("code=ErrorAccessDenied"), true);
+  assert.equal(output.includes("message=Access is denied. Check credentials and try again."), true);
+  assert.equal(output.includes("requestId=req-header-top"), true);
+  assert.equal(output.includes("clientRequestId=client-header-top"), true);
+});

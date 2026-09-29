@@ -218,7 +218,9 @@ export function logGraphDiagnostic({
   if (htmlMeta) {
     lines.push(`htmlMeta=${JSON.stringify(htmlMeta)}`);
   }
-  console.info(lines.join("\n"));
+  const payload = lines.join("\n");
+  console.error(payload);
+  console.info(payload);
 }
 
 function isPreSendNetworkError(error) {
