@@ -123,17 +123,102 @@ function graphReplyError(status) {
   });
 }
 
-async function readGraphErrorCode(response) {
-  try {
-    const payload = await response.clone().json();
-    return typeof payload?.error?.code === "string"
-      ? payload.error.code
-      : typeof payload?.error === "string"
-        ? payload.error
-        : undefined;
-  } catch {
-    return undefined;
+function getHeader(response, name) {
+  if (!response?.headers) return null;
+  if (typeof response.headers.get === "function") {
+    return response.headers.get(name) || response.headers.get(name.toLowerCase());
   }
+  if (typeof response.headers === "object") {
+    return response.headers[name] || response.headers[name.toLowerCase()] || null;
+  }
+  return null;
+}
+
+export async function readGraphErrorDetails(response) {
+  const requestIdHeader = getHeader(response, "request-id");
+  const clientRequestIdHeader = getHeader(response, "client-request-id");
+
+  let code;
+  let message;
+  let innerErrorCode;
+  let requestId = requestIdHeader || undefined;
+  let clientRequestId = clientRequestIdHeader || undefined;
+
+  try {
+    const clone = typeof response?.clone === "function" ? response.clone() : response;
+    const payload = typeof clone?.json === "function" ? await clone.json() : clone;
+    const errorObj = payload?.error;
+    if (typeof errorObj === "object" && errorObj !== null) {
+      if (typeof errorObj.code === "string" && errorObj.code.trim()) {
+        code = errorObj.code.trim();
+      }
+      if (typeof errorObj.message === "string" && errorObj.message.trim()) {
+        message = errorObj.message.trim();
+      }
+      const inner = errorObj.innerError || errorObj.innererror;
+      if (typeof inner === "object" && inner !== null) {
+        if (typeof inner.code === "string" && inner.code.trim()) {
+          innerErrorCode = inner.code.trim();
+        }
+        if (!requestId && typeof inner["request-id"] === "string" && inner["request-id"].trim()) {
+          requestId = inner["request-id"].trim();
+        }
+        if (!clientRequestId && typeof inner["client-request-id"] === "string" && inner["client-request-id"].trim()) {
+          clientRequestId = inner["client-request-id"].trim();
+        }
+      }
+    } else if (typeof payload?.error === "string" && payload.error.trim()) {
+      code = payload.error.trim();
+    }
+  } catch {
+    // Body was not JSON or could not be read
+  }
+
+  return {
+    code: code || undefined,
+    message: message || undefined,
+    innerErrorCode: innerErrorCode || undefined,
+    requestId: requestId || undefined,
+    clientRequestId: clientRequestId || undefined,
+  };
+}
+
+export async function readGraphErrorCode(response) {
+  const details = await readGraphErrorDetails(response);
+  return details.code;
+}
+
+export function logGraphDiagnostic({
+  operation,
+  status,
+  code,
+  message,
+  innerErrorCode,
+  requestId,
+  clientRequestId,
+  messageId,
+  htmlMeta,
+}) {
+  const lines = [
+    "MICROSOFT_GRAPH_DIAGNOSTIC",
+    `operation=${operation}`,
+    `status=${status ?? "unknown"}`,
+  ];
+  if (code) lines.push(`code=${code}`);
+  if (message) lines.push(`message=${message}`);
+  if (innerErrorCode) lines.push(`innerErrorCode=${innerErrorCode}`);
+  if (requestId) lines.push(`requestId=${requestId}`);
+  if (clientRequestId) lines.push(`clientRequestId=${clientRequestId}`);
+  if (messageId) {
+    const safeId = typeof messageId === "string"
+      ? (messageId.length > 30 ? `${messageId.slice(0, 15)}...[len=${messageId.length}]` : messageId)
+      : "unknown";
+    lines.push(`messageId=${safeId}`);
+  }
+  if (htmlMeta) {
+    lines.push(`htmlMeta=${JSON.stringify(htmlMeta)}`);
+  }
+  console.info(lines.join("\n"));
 }
 
 function isPreSendNetworkError(error) {
@@ -145,7 +230,7 @@ function isPreSendNetworkError(error) {
 }
 const SIGNATURE_CONTENT_ID = "smartdesk-signature";
 
-function signatureGraphError(publicCode, message, signatureDebug) {
+function signatureGraphError(publicCode, message, signatureDebug, graphDetails = {}) {
   return Object.assign(new Error(message), {
     statusCode: 502,
     publicCode,
@@ -153,6 +238,9 @@ function signatureGraphError(publicCode, message, signatureDebug) {
     microsoftDiagnosticError: true,
     diagnosticCode: publicCode,
     signatureDebug: { ...signatureDebug },
+    ...(graphDetails.status ? { graphStatus: graphDetails.status } : {}),
+    ...(graphDetails.code ? { graphError: graphDetails.code } : {}),
+    ...(Object.keys(graphDetails).length > 0 ? { graphDetails } : {}),
   });
 }
 
@@ -203,6 +291,13 @@ async function executeInlineSignatureDraft(
     );
   }
 
+  const htmlMeta = {
+    htmlType: typeof html,
+    htmlLength: typeof html === "string" ? html.length : undefined,
+    containsSignatureCid:
+      typeof html === "string" && html.includes(`src="cid:${SIGNATURE_CONTENT_ID}"`),
+  };
+
   const messageUrl = "https://graph.microsoft.com/v1.0/me/messages/";
   let response;
   try {
@@ -214,7 +309,14 @@ async function executeInlineSignatureDraft(
       },
       signal: AbortSignal.timeout(15000),
     });
-  } catch {
+  } catch (error) {
+    logGraphDiagnostic({
+      operation: "createReply",
+      status: "network_error",
+      message: error?.message || "Erro de rede ao criar rascunho de resposta.",
+      messageId,
+      htmlMeta,
+    });
     throw signatureGraphError(
       "SIGNATURE_DRAFT_FAILED",
       "Não foi possível criar o rascunho da resposta com assinatura.",
@@ -223,16 +325,36 @@ async function executeInlineSignatureDraft(
   }
 
   if (response.status !== 201) {
+    const errorDetails = await readGraphErrorDetails(response);
+    logGraphDiagnostic({
+      operation: "createReply",
+      status: response.status,
+      code: errorDetails.code,
+      message: errorDetails.message,
+      innerErrorCode: errorDetails.innerErrorCode,
+      requestId: errorDetails.requestId,
+      clientRequestId: errorDetails.clientRequestId,
+      messageId,
+      htmlMeta,
+    });
     throw signatureGraphError(
       "SIGNATURE_DRAFT_FAILED",
       "A Microsoft não aceitou a criação do rascunho da resposta.",
       signatureDebug,
+      { status: response.status, ...errorDetails },
     );
   }
 
   const draft = await readResponseJson(response);
   const draftId = typeof draft?.id === "string" && draft.id.trim() ? draft.id : null;
   if (!draftId) {
+    logGraphDiagnostic({
+      operation: "createReply",
+      status: response.status,
+      code: "MissingDraftId",
+      message: "A Microsoft não retornou o identificador do rascunho.",
+      messageId,
+    });
     throw signatureGraphError(
       "SIGNATURE_DRAFT_FAILED",
       "A Microsoft não retornou o identificador do rascunho.",
@@ -257,7 +379,13 @@ async function executeInlineSignatureDraft(
       }),
       signal: AbortSignal.timeout(15000),
     });
-  } catch {
+  } catch (error) {
+    logGraphDiagnostic({
+      operation: "patchDraft",
+      status: "network_error",
+      message: error?.message || "Erro de rede ao atualizar o rascunho da resposta.",
+      htmlMeta,
+    });
     throw signatureGraphError(
       "SIGNATURE_DRAFT_FAILED",
       "Não foi possível atualizar o rascunho da resposta.",
@@ -266,10 +394,22 @@ async function executeInlineSignatureDraft(
   }
 
   if (response.status !== 200) {
+    const errorDetails = await readGraphErrorDetails(response);
+    logGraphDiagnostic({
+      operation: "patchDraft",
+      status: response.status,
+      code: errorDetails.code,
+      message: errorDetails.message,
+      innerErrorCode: errorDetails.innerErrorCode,
+      requestId: errorDetails.requestId,
+      clientRequestId: errorDetails.clientRequestId,
+      htmlMeta,
+    });
     throw signatureGraphError(
       "SIGNATURE_DRAFT_FAILED",
       "A Microsoft não aceitou o HTML do rascunho da resposta.",
       signatureDebug,
+      { status: response.status, ...errorDetails },
     );
   }
 
@@ -290,7 +430,12 @@ async function executeInlineSignatureDraft(
       }),
       signal: AbortSignal.timeout(15000),
     });
-  } catch {
+  } catch (error) {
+    logGraphDiagnostic({
+      operation: "addInlineSignature",
+      status: "network_error",
+      message: error?.message || "Erro de rede ao adicionar assinatura ao rascunho.",
+    });
     throw signatureGraphError(
       "SIGNATURE_ATTACHMENT_FAILED",
       "Não foi possível adicionar a assinatura ao rascunho.",
@@ -299,10 +444,21 @@ async function executeInlineSignatureDraft(
   }
 
   if (response.status !== 201) {
+    const errorDetails = await readGraphErrorDetails(response);
+    logGraphDiagnostic({
+      operation: "addInlineSignature",
+      status: response.status,
+      code: errorDetails.code,
+      message: errorDetails.message,
+      innerErrorCode: errorDetails.innerErrorCode,
+      requestId: errorDetails.requestId,
+      clientRequestId: errorDetails.clientRequestId,
+    });
     throw signatureGraphError(
       "SIGNATURE_ATTACHMENT_FAILED",
       "A Microsoft não aceitou a assinatura inline.",
       signatureDebug,
+      { status: response.status, ...errorDetails },
     );
   }
   signatureDebug.attachment_created = true;
@@ -316,7 +472,12 @@ async function executeInlineSignatureDraft(
       },
       signal: AbortSignal.timeout(15000),
     });
-  } catch {
+  } catch (error) {
+    logGraphDiagnostic({
+      operation: "sendDraft",
+      status: "network_error",
+      message: error?.message || "Erro de rede ao enviar o rascunho da resposta.",
+    });
     throw signatureGraphError(
       "SIGNATURE_SEND_FAILED",
       "Não foi possível enviar o rascunho com assinatura.",
@@ -325,10 +486,21 @@ async function executeInlineSignatureDraft(
   }
 
   if (response.status !== 202) {
+    const errorDetails = await readGraphErrorDetails(response);
+    logGraphDiagnostic({
+      operation: "sendDraft",
+      status: response.status,
+      code: errorDetails.code,
+      message: errorDetails.message,
+      innerErrorCode: errorDetails.innerErrorCode,
+      requestId: errorDetails.requestId,
+      clientRequestId: errorDetails.clientRequestId,
+    });
     throw signatureGraphError(
       "SIGNATURE_SEND_FAILED",
       "A Microsoft não aceitou o envio do rascunho com assinatura.",
       signatureDebug,
+      { status: response.status, ...errorDetails },
     );
   }
   signatureDebug.draft_sent = true;
@@ -437,14 +609,27 @@ export async function replyToMicrosoftMessage(
   }
 
   if (response.status !== 202) {
-    const externalCode = await readGraphErrorCode(response);
+    const errorDetails = await readGraphErrorDetails(response);
+    logGraphDiagnostic({
+      operation: "reply",
+      status: response.status,
+      code: errorDetails.code,
+      message: errorDetails.message,
+      innerErrorCode: errorDetails.innerErrorCode,
+      requestId: errorDetails.requestId,
+      clientRequestId: errorDetails.clientRequestId,
+      messageId,
+    });
     logMicrosoftDiagnostic("graph.reply", {
       userId,
       status: response.status,
-      code: externalCode,
+      code: errorDetails.code,
       errorName: "MicrosoftGraphError",
     });
-    throw graphReplyError(response.status);
+    const error = graphReplyError(response.status);
+    error.graphError = errorDetails.code;
+    error.graphDetails = errorDetails;
+    throw error;
   }
 
   logMicrosoftDiagnostic("graph.reply", {
@@ -600,6 +785,19 @@ export async function createMicrosoftReplyDraft(
     `${GRAPH_MESSAGES_URL}${encodeURIComponent(messageId)}/createReply`,
     { method: "POST", headers, signal: AbortSignal.timeout(15000) },
   );
+  if (![201].includes(createResponse.status)) {
+    const errorDetails = await readGraphErrorDetails(createResponse);
+    logGraphDiagnostic({
+      operation: "createReply",
+      status: createResponse.status,
+      code: errorDetails.code,
+      message: errorDetails.message,
+      innerErrorCode: errorDetails.innerErrorCode,
+      requestId: errorDetails.requestId,
+      clientRequestId: errorDetails.clientRequestId,
+      messageId,
+    });
+  }
   await ensureGraphResponse(createResponse, [201]);
   const draft = await readResponseJson(createResponse);
   if (typeof draft.id !== "string" || !draft.id) {
@@ -613,6 +811,18 @@ export async function createMicrosoftReplyDraft(
       body: JSON.stringify({ body: { contentType: "HTML", content: html } }),
       signal: AbortSignal.timeout(15000),
     });
+    if (![200].includes(patchResponse.status)) {
+      const errorDetails = await readGraphErrorDetails(patchResponse);
+      logGraphDiagnostic({
+        operation: "patchDraft",
+        status: patchResponse.status,
+        code: errorDetails.code,
+        message: errorDetails.message,
+        innerErrorCode: errorDetails.innerErrorCode,
+        requestId: errorDetails.requestId,
+        clientRequestId: errorDetails.clientRequestId,
+      });
+    }
     await ensureGraphResponse(patchResponse, [200]);
 
     if (inlineAttachment) {
