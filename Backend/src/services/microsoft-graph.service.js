@@ -230,6 +230,165 @@ function isPreSendNetworkError(error) {
     error?.name === "TimeoutError"
   );
 }
+
+/**
+ * Retorna true SOMENTE quando o Graph retornou 503 com code exato
+ * "ErrorMailboxMoveInProgress". Nenhuma outra condição é aceita.
+ */
+function isMailboxMoveInProgress(status, errorCode) {
+  return status === 503 && errorCode === "ErrorMailboxMoveInProgress";
+}
+
+/**
+ * Delay simples com jitter mínimo (±10 %) para evitar sincronização.
+ * Mantém total muito abaixo do timeout do Vercel.
+ */
+function mailboxMoveDelay(attemptIndex) {
+  const base = [1000, 2000, 4000];
+  const ms = base[attemptIndex] ?? 4000;
+  const jitter = Math.floor(ms * 0.1 * (Math.random() - 0.5) * 2);
+  return new Promise((resolve) => setTimeout(resolve, ms + jitter));
+}
+
+/**
+ * Executa POST /me/messages/{messageId}/createReply com até 3 retries
+ * exclusivamente quando o Graph retornar 503 ErrorMailboxMoveInProgress.
+ *
+ * Retorna { response, errorDetails } onde response.status === 201 em caso
+ * de sucesso, ou lança um erro já formatado em caso de falha definitiva.
+ *
+ * IMPORTANTE: se todos os retries falharem com MailboxMoveInProgress,
+ * lança um erro com mensagem e publicCode específicos (não genéricos).
+ */
+async function createReplyWithMailboxMoveRetry(
+  fetchImpl,
+  accessToken,
+  messageId,
+  signatureDebug,
+  htmlMeta,
+) {
+  const url =
+    "https://graph.microsoft.com/v1.0/me/messages/" +
+    encodeURIComponent(messageId) +
+    "/createReply";
+  const requestOptions = {
+    method: "POST",
+    headers: {
+      Authorization: "Bearer " + accessToken,
+      "Content-Type": "application/json",
+    },
+    signal: AbortSignal.timeout(15000),
+  };
+
+  const MAX_RETRIES = 3;
+  let lastErrorDetails = null;
+
+  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    const isRetry = attempt > 0;
+    let response;
+
+    // Tentativa de rede
+    try {
+      response = await fetchImpl(url, {
+        ...requestOptions,
+        // Novo AbortSignal a cada tentativa
+        signal: AbortSignal.timeout(15000),
+      });
+    } catch (error) {
+      logGraphDiagnostic({
+        operation: isRetry ? `createReply_retry${attempt}` : "createReply",
+        status: "network_error",
+        message: error?.message || "Erro de rede ao criar rascunho de resposta.",
+        messageId,
+        htmlMeta,
+      });
+      throw signatureGraphError(
+        "SIGNATURE_DRAFT_FAILED",
+        "Não foi possível criar o rascunho da resposta com assinatura.",
+        signatureDebug,
+        {
+          status: null,
+          code: "NETWORK_ERROR",
+          message: error?.message?.slice(0, 300) || null,
+          requestId: null,
+          clientRequestId: null,
+        },
+        "createReply",
+      );
+    }
+
+    // Sucesso
+    if (response.status === 201) {
+      if (isRetry) {
+        logGraphDiagnostic({
+          operation: `createReply_retry${attempt}`,
+          status: response.status,
+          code: "MailboxMoveRecovered",
+          message: `createReply bem-sucedido na tentativa ${attempt} após ErrorMailboxMoveInProgress.`,
+          messageId,
+          htmlMeta,
+        });
+      }
+      return response;
+    }
+
+    // Falha — lê detalhes
+    const errorDetails = await readGraphErrorDetails(response);
+    lastErrorDetails = errorDetails;
+
+    const operationLabel = isRetry ? `createReply_retry${attempt}` : "createReply";
+    logGraphDiagnostic({
+      operation: operationLabel,
+      status: response.status,
+      code: errorDetails.code,
+      message: errorDetails.message,
+      innerErrorCode: errorDetails.innerErrorCode,
+      requestId: errorDetails.requestId,
+      clientRequestId: errorDetails.clientRequestId,
+      messageId,
+      htmlMeta,
+    });
+
+    // Verifica se é o erro específico de mailbox em movimentação
+    const isMailboxMove = isMailboxMoveInProgress(response.status, errorDetails.code);
+
+    if (isMailboxMove && attempt < MAX_RETRIES) {
+      // Aguarda backoff e tenta novamente
+      await mailboxMoveDelay(attempt);
+      continue;
+    }
+
+    // Falha definitiva — determina mensagem/código corretos
+    if (isMailboxMove) {
+      // Todos os retries esgotados ainda com ErrorMailboxMoveInProgress
+      throw signatureGraphError(
+        "SIGNATURE_DRAFT_MAILBOX_MOVE",
+        "O Microsoft 365 está temporariamente indisponível para esta caixa de e-mail porque ela está passando por uma movimentação interna. Tente novamente em alguns minutos.",
+        signatureDebug,
+        { status: response.status, ...errorDetails },
+        "createReply",
+      );
+    }
+
+    // Qualquer outro erro — comportamento original
+    throw signatureGraphError(
+      "SIGNATURE_DRAFT_FAILED",
+      "A Microsoft não aceitou a criação do rascunho da resposta.",
+      signatureDebug,
+      { status: response.status, ...errorDetails },
+      "createReply",
+    );
+  }
+
+  // Fallback de segurança (não deve ser alcançado)
+  throw signatureGraphError(
+    "SIGNATURE_DRAFT_MAILBOX_MOVE",
+    "O Microsoft 365 está temporariamente indisponível para esta caixa de e-mail porque ela está passando por uma movimentação interna. Tente novamente em alguns minutos.",
+    signatureDebug,
+    { status: 503, ...lastErrorDetails },
+    "createReply",
+  );
+}
 const SIGNATURE_CONTENT_ID = "smartdesk-signature";
 
 function signatureGraphError(publicCode, message, signatureDebug, graphDetails = {}, operation = null) {
@@ -310,61 +469,24 @@ async function executeInlineSignatureDraft(
   };
 
   const messageUrl = "https://graph.microsoft.com/v1.0/me/messages/";
-  let response;
-  try {
-    response = await fetchImpl(messageUrl + encodeURIComponent(messageId) + "/createReply", {
-      method: "POST",
-      headers: {
-        Authorization: "Bearer " + accessToken,
-        "Content-Type": "application/json",
-      },
-      signal: AbortSignal.timeout(15000),
-    });
-  } catch (error) {
-    logGraphDiagnostic({
-      operation: "createReply",
-      status: "network_error",
-      message: error?.message || "Erro de rede ao criar rascunho de resposta.",
-      messageId,
-      htmlMeta,
-    });
-    throw signatureGraphError(
-      "SIGNATURE_DRAFT_FAILED",
-      "Não foi possível criar o rascunho da resposta com assinatura.",
-      signatureDebug,
-      { status: null, code: "NETWORK_ERROR", message: error?.message?.slice(0, 300) || null, requestId: null, clientRequestId: null },
-      "createReply",
-    );
-  }
 
-  if (response.status !== 201) {
-    const errorDetails = await readGraphErrorDetails(response);
-    logGraphDiagnostic({
-      operation: "createReply",
-      status: response.status,
-      code: errorDetails.code,
-      message: errorDetails.message,
-      innerErrorCode: errorDetails.innerErrorCode,
-      requestId: errorDetails.requestId,
-      clientRequestId: errorDetails.clientRequestId,
-      messageId,
-      htmlMeta,
-    });
-    throw signatureGraphError(
-      "SIGNATURE_DRAFT_FAILED",
-      "A Microsoft não aceitou a criação do rascunho da resposta.",
-      signatureDebug,
-      { status: response.status, ...errorDetails },
-      "createReply",
-    );
-  }
+  // createReply com retry para 503 ErrorMailboxMoveInProgress.
+  // O retry acontece APENAS aqui, antes de qualquer draft existir,
+  // eliminando qualquer risco de duplicar envios.
+  const createResponse = await createReplyWithMailboxMoveRetry(
+    fetchImpl,
+    accessToken,
+    messageId,
+    signatureDebug,
+    htmlMeta,
+  );
 
-  const draft = await readResponseJson(response);
+  const draft = await readResponseJson(createResponse);
   const draftId = typeof draft?.id === "string" && draft.id.trim() ? draft.id : null;
   if (!draftId) {
     logGraphDiagnostic({
       operation: "createReply",
-      status: response.status,
+      status: createResponse.status,
       code: "MissingDraftId",
       message: "A Microsoft não retornou o identificador do rascunho.",
       messageId,
@@ -373,13 +495,14 @@ async function executeInlineSignatureDraft(
       "SIGNATURE_DRAFT_FAILED",
       "A Microsoft não retornou o identificador do rascunho.",
       signatureDebug,
-      { status: response.status, code: "MissingDraftId", message: null, requestId: null, clientRequestId: null },
+      { status: createResponse.status, code: "MissingDraftId", message: null, requestId: null, clientRequestId: null },
       "createReply",
     );
   }
   signatureDebug.draft_created = true;
 
   const draftUrl = messageUrl + encodeURIComponent(draftId);
+  let response;
   try {
     response = await fetchImpl(draftUrl, {
       method: "PATCH",
