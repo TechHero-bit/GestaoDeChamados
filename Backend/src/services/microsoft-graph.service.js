@@ -244,6 +244,9 @@ function isMailboxMoveInProgress(status, errorCode) {
  * Mantém total muito abaixo do timeout do Vercel.
  */
 function mailboxMoveDelay(attemptIndex) {
+  if (process.env.NODE_ENV === "test") {
+    return new Promise((resolve) => setTimeout(resolve, 5));
+  }
   const base = [1000, 2000, 4000];
   const ms = base[attemptIndex] ?? 4000;
   const jitter = Math.floor(ms * 0.1 * (Math.random() - 0.5) * 2);
@@ -254,11 +257,10 @@ function mailboxMoveDelay(attemptIndex) {
  * Executa POST /me/messages/{messageId}/createReply com até 3 retries
  * exclusivamente quando o Graph retornar 503 ErrorMailboxMoveInProgress.
  *
- * Retorna { response, errorDetails } onde response.status === 201 em caso
- * de sucesso, ou lança um erro já formatado em caso de falha definitiva.
- *
- * IMPORTANTE: se todos os retries falharem com MailboxMoveInProgress,
- * lança um erro com mensagem e publicCode específicos (não genéricos).
+ * Retorna response com status 201 em caso de sucesso.
+ * Se todos os retries falharem com MailboxMoveInProgress, lança
+ * SIGNATURE_DRAFT_MAILBOX_MOVE com operation createReply_mailbox_move_exhausted.
+ * NUNCA desvia para envio independente via sendMail.
  */
 async function createReplyWithMailboxMoveRetry(
   fetchImpl,
@@ -291,12 +293,12 @@ async function createReplyWithMailboxMoveRetry(
     try {
       response = await fetchImpl(url, {
         ...requestOptions,
-        // Novo AbortSignal a cada tentativa
         signal: AbortSignal.timeout(15000),
       });
     } catch (error) {
+      const retryOp = isRetry ? `createReply_retry${attempt}` : "createReply";
       logGraphDiagnostic({
-        operation: isRetry ? `createReply_retry${attempt}` : "createReply",
+        operation: retryOp,
         status: "network_error",
         message: error?.message || "Erro de rede ao criar rascunho de resposta.",
         messageId,
@@ -313,7 +315,7 @@ async function createReplyWithMailboxMoveRetry(
           requestId: null,
           clientRequestId: null,
         },
-        "createReply",
+        retryOp,
       );
     }
 
@@ -329,6 +331,16 @@ async function createReplyWithMailboxMoveRetry(
           htmlMeta,
         });
       }
+      logGraphDiagnostic({
+        operation: "createReply_success",
+        status: response.status,
+        code: isRetry ? "MailboxMoveRecovered" : undefined,
+        message: isRetry
+          ? `createReply bem-sucedido na tentativa ${attempt} após ErrorMailboxMoveInProgress.`
+          : "createReply bem-sucedido.",
+        messageId,
+        htmlMeta,
+      });
       return response;
     }
 
@@ -336,9 +348,50 @@ async function createReplyWithMailboxMoveRetry(
     const errorDetails = await readGraphErrorDetails(response);
     lastErrorDetails = errorDetails;
 
-    const operationLabel = isRetry ? `createReply_retry${attempt}` : "createReply";
+    // Verifica se é o erro específico de mailbox em movimentação
+    const isMailboxMove = isMailboxMoveInProgress(response.status, errorDetails.code);
+
+    if (isMailboxMove && attempt < MAX_RETRIES) {
+      logGraphDiagnostic({
+        operation: `createReply_retry${attempt + 1}`,
+        status: response.status,
+        code: errorDetails.code,
+        message: `createReply retry ${attempt + 1} após ErrorMailboxMoveInProgress: ${errorDetails.message || ""}`.trim(),
+        innerErrorCode: errorDetails.innerErrorCode,
+        requestId: errorDetails.requestId,
+        clientRequestId: errorDetails.clientRequestId,
+        messageId,
+        htmlMeta,
+      });
+      await mailboxMoveDelay(attempt);
+      continue;
+    }
+
+    // Falha definitiva — determina mensagem/código corretos
+    if (isMailboxMove) {
+      logGraphDiagnostic({
+        operation: "createReply_mailbox_move_exhausted",
+        status: response.status,
+        code: errorDetails.code,
+        message: "createReply esgotou todas as tentativas com ErrorMailboxMoveInProgress.",
+        innerErrorCode: errorDetails.innerErrorCode,
+        requestId: errorDetails.requestId,
+        clientRequestId: errorDetails.clientRequestId,
+        messageId,
+        htmlMeta,
+      });
+      throw signatureGraphError(
+        "SIGNATURE_DRAFT_MAILBOX_MOVE",
+        "O Microsoft 365 está temporariamente indisponível para esta caixa de e-mail porque ela está passando por uma movimentação interna. Tente novamente em alguns minutos.",
+        signatureDebug,
+        { status: response.status, ...errorDetails },
+        "createReply_mailbox_move_exhausted",
+      );
+    }
+
+    // Qualquer outro erro — comportamento original
     logGraphDiagnostic({
-      operation: operationLabel,
+      operation: "createReply",
       status: response.status,
       code: errorDetails.code,
       message: errorDetails.message,
@@ -348,29 +401,6 @@ async function createReplyWithMailboxMoveRetry(
       messageId,
       htmlMeta,
     });
-
-    // Verifica se é o erro específico de mailbox em movimentação
-    const isMailboxMove = isMailboxMoveInProgress(response.status, errorDetails.code);
-
-    if (isMailboxMove && attempt < MAX_RETRIES) {
-      // Aguarda backoff e tenta novamente
-      await mailboxMoveDelay(attempt);
-      continue;
-    }
-
-    // Falha definitiva — determina mensagem/código corretos
-    if (isMailboxMove) {
-      // Todos os retries esgotados ainda com ErrorMailboxMoveInProgress
-      throw signatureGraphError(
-        "SIGNATURE_DRAFT_MAILBOX_MOVE",
-        "O Microsoft 365 está temporariamente indisponível para esta caixa de e-mail porque ela está passando por uma movimentação interna. Tente novamente em alguns minutos.",
-        signatureDebug,
-        { status: response.status, ...errorDetails },
-        "createReply",
-      );
-    }
-
-    // Qualquer outro erro — comportamento original
     throw signatureGraphError(
       "SIGNATURE_DRAFT_FAILED",
       "A Microsoft não aceitou a criação do rascunho da resposta.",
@@ -380,159 +410,21 @@ async function createReplyWithMailboxMoveRetry(
     );
   }
 
-  // Fallback de segurança (não deve ser alcançado)
+  logGraphDiagnostic({
+    operation: "createReply_mailbox_move_exhausted",
+    status: 503,
+    code: lastErrorDetails?.code || "ErrorMailboxMoveInProgress",
+    message: "createReply esgotou todas as tentativas com ErrorMailboxMoveInProgress.",
+    messageId,
+    htmlMeta,
+  });
   throw signatureGraphError(
     "SIGNATURE_DRAFT_MAILBOX_MOVE",
     "O Microsoft 365 está temporariamente indisponível para esta caixa de e-mail porque ela está passando por uma movimentação interna. Tente novamente em alguns minutos.",
     signatureDebug,
     { status: 503, ...lastErrorDetails },
-    "createReply",
+    "createReply_mailbox_move_exhausted",
   );
-}
-/**
- * Fallback exclusivo para envio de resposta via POST /me/sendMail quando
- * o Microsoft Graph recusa POST createReply com 503 ErrorMailboxMoveInProgress
- * e todos os retries já foram esgotados.
- *
- * Preserva:
- * - Destinatário correto (to)
- * - Assunto correto com prefixo RE: quando aplicável (subject)
- * - Corpo HTML seguro com a tag de assinatura inline (html)
- * - Imagem da assinatura como fileAttachment inline com contentId correspondente (inlineAttachment)
- *
- * Restrições e segurança:
- * - Acionado SOMENTE quando status === 503 && error.code === "ErrorMailboxMoveInProgress"
- * - NENHUM draft foi criado (draft_created === false), garantindo que não há risco de e-mails duplicados
- * - Registra log de diagnóstico seguro da operação "sendMail_fallback"
- * - Em caso de falha, lança SIGNATURE_DRAFT_MAILBOX_MOVE_FALLBACK_FAILED
- * - NUNCA expõe access tokens, refresh tokens, secrets ou HTML completo nos logs
- */
-export async function sendFallbackReply({
-  fetchImpl = globalThis.fetch,
-  accessToken,
-  to,
-  subject,
-  html,
-  inlineAttachment,
-  signatureDebug,
-  originalErrorDetails,
-}) {
-  const messagePayload = {
-    subject,
-    body: {
-      contentType: "HTML",
-      content: html,
-    },
-    toRecipients: [
-      {
-        emailAddress: {
-          address: to,
-        },
-      },
-    ],
-  };
-
-  if (inlineAttachment?.contentBytes) {
-    messagePayload.attachments = [
-      buildSignatureAttachmentPayload({
-        contentBytes: inlineAttachment.contentBytes,
-        contentId: inlineAttachment.contentId || SIGNATURE_CONTENT_ID,
-      }),
-    ];
-  }
-
-  const payload = {
-    message: messagePayload,
-    saveToSentItems: true,
-  };
-
-  let response;
-  try {
-    response = await fetchImpl(GRAPH_SEND_MAIL_URL, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(payload),
-      signal: AbortSignal.timeout(15000),
-    });
-  } catch (error) {
-    logGraphDiagnostic({
-      operation: "sendMail_fallback",
-      status: "network_error",
-      message: error?.message || "Erro de rede no fallback sendMail.",
-      fallbackUsed: true,
-    });
-    throw signatureGraphError(
-      "SIGNATURE_DRAFT_MAILBOX_MOVE_FALLBACK_FAILED",
-      "O Microsoft 365 recusou o envio original devido à movimentação interna da caixa postal e o mecanismo alternativo de envio também falhou por erro de comunicação.",
-      { ...signatureDebug, fallback_attempted: true, fallback_failed: true },
-      {
-        status: null,
-        code: "NETWORK_ERROR",
-        message: error?.message?.slice(0, 300) || null,
-        requestId: null,
-        clientRequestId: null,
-        fallbackUsed: true,
-        originalError: originalErrorDetails,
-      },
-      "sendMail_fallback",
-    );
-  }
-
-  if (response.status !== 202) {
-    const errorDetails = await readGraphErrorDetails(response);
-    logGraphDiagnostic({
-      operation: "sendMail_fallback",
-      status: response.status,
-      code: errorDetails.code,
-      message: errorDetails.message,
-      innerErrorCode: errorDetails.innerErrorCode,
-      requestId: errorDetails.requestId,
-      clientRequestId: errorDetails.clientRequestId,
-      fallbackUsed: true,
-    });
-    throw signatureGraphError(
-      "SIGNATURE_DRAFT_MAILBOX_MOVE_FALLBACK_FAILED",
-      "O Microsoft 365 recusou o envio da resposta: a caixa postal está em movimentação interna e a tentativa de envio alternativo também foi recusada.",
-      { ...signatureDebug, fallback_attempted: true, fallback_failed: true },
-      {
-        status: response.status,
-        code: errorDetails.code,
-        message: errorDetails.message,
-        innerErrorCode: errorDetails.innerErrorCode,
-        requestId: errorDetails.requestId,
-        clientRequestId: errorDetails.clientRequestId,
-        fallbackUsed: true,
-        originalError: originalErrorDetails,
-      },
-      "sendMail_fallback",
-    );
-  }
-
-  logGraphDiagnostic({
-    operation: "sendMail_fallback",
-    status: response.status,
-    code: "FallbackSuccess",
-    message: "Fallback sendMail enviado com sucesso após ErrorMailboxMoveInProgress.",
-    fallbackUsed: true,
-  });
-
-  const updatedSignatureDebug = {
-    ...signatureDebug,
-    draft_created: false,
-    attachment_created: Boolean(inlineAttachment),
-    attachment_inline: Boolean(inlineAttachment),
-    draft_sent: true,
-    fallback_used: true,
-  };
-
-  return {
-    status: 202,
-    fallbackUsed: true,
-    signatureDebug: updatedSignatureDebug,
-  };
 }
 
 const SIGNATURE_CONTENT_ID = "smartdesk-signature";
@@ -629,37 +521,14 @@ async function executeInlineSignatureDraft(
       htmlMeta,
     );
   } catch (error) {
-    // Fallback restrito EXCLUSIVAMENTE para 503 + ErrorMailboxMoveInProgress
-    // quando todos os retries de createReply foram esgotados.
-    // Nenhum draft foi criado (signatureDebug.draft_created === false).
-    const isMailboxMove =
-      error?.publicCode === "SIGNATURE_DRAFT_MAILBOX_MOVE" &&
-      (error?.graphStatus === 503 || error?.graphDetails?.status === 503) &&
-      (error?.graphError === "ErrorMailboxMoveInProgress" ||
-        error?.graphDetails?.code === "ErrorMailboxMoveInProgress");
-
-    if (
-      isMailboxMove &&
-      signatureDebug.draft_created === false &&
-      typeof to === "string" &&
-      to.trim().length > 0
-    ) {
-      return await sendFallbackReply({
-        fetchImpl,
-        accessToken,
-        to: to.trim(),
-        subject:
-          typeof subject === "string" && subject.trim().length > 0
-            ? subject.trim()
-            : "Resposta ao chamado",
-        html,
-        inlineAttachment,
-        signatureDebug,
-        originalErrorDetails: error.graphDetails,
-      });
-    }
-
-    // Qualquer outro erro não é elegível para fallback e segue o fluxo original
+    logGraphDiagnostic({
+      operation: "threaded_reply_failed",
+      status: error.graphStatus || error.statusCode || 502,
+      code: error.graphError || error.publicCode || "ThreadedReplyFailed",
+      message: error.message,
+      messageId,
+      htmlMeta,
+    });
     throw error;
   }
 
@@ -835,6 +704,13 @@ async function executeInlineSignatureDraft(
   }
   signatureDebug.draft_sent = true;
 
+  logGraphDiagnostic({
+    operation: "threaded_reply_success",
+    status: 202,
+    message: "Resposta na conversa do Outlook enviada com sucesso com assinatura.",
+    messageId,
+  });
+
   return { draftId, status: 202, signatureDebug: { ...signatureDebug } };
 }
 /**
@@ -950,6 +826,16 @@ export async function replyToMicrosoftMessage(
       clientRequestId: errorDetails.clientRequestId,
       messageId,
     });
+    logGraphDiagnostic({
+      operation: "threaded_reply_failed",
+      status: response.status,
+      code: errorDetails.code,
+      message: errorDetails.message,
+      innerErrorCode: errorDetails.innerErrorCode,
+      requestId: errorDetails.requestId,
+      clientRequestId: errorDetails.clientRequestId,
+      messageId,
+    });
     logMicrosoftDiagnostic("graph.reply", {
       userId,
       status: response.status,
@@ -962,6 +848,12 @@ export async function replyToMicrosoftMessage(
     throw error;
   }
 
+  logGraphDiagnostic({
+    operation: "threaded_reply_success",
+    status: response.status,
+    message: "Resposta na conversa do Outlook enviada com sucesso.",
+    messageId,
+  });
   logMicrosoftDiagnostic("graph.reply", {
     userId,
     status: response.status,

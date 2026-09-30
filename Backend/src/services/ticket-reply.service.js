@@ -162,7 +162,6 @@ export async function sendAndPersistTicketReply(
 
   let provider;
   let senderEmail;
-  let fallbackUsed = false;
 
   if (connection.connected) {
     try {
@@ -182,9 +181,6 @@ export async function sendAndPersistTicketReply(
           ...signatureDebug,
           ...(graphResult?.signatureDebug || {}),
         };
-      }
-      if (graphResult?.fallbackUsed) {
-        fallbackUsed = true;
       }
       provider = "microsoft_graph";
       senderEmail = microsoftSenderEmail(connection, helpdeskEmail);
@@ -235,6 +231,5 @@ export async function sendAndPersistTicketReply(
     message: persistedMessage,
     provider,
     signatureDebug,
-    ...(fallbackUsed ? { fallbackUsed: true } : {}),
   };
 }

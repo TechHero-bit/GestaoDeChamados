@@ -1,20 +1,28 @@
 /**
- * Testes para o fallback seguro de 503 ErrorMailboxMoveInProgress via POST /me/sendMail.
+ * Testes para o tratamento seguro de 503 ErrorMailboxMoveInProgress com
+ * preservação estrita de threading na conversa original da caixa compartilhada.
  *
- * Cobre os 8 cenarios obrigatorios:
- *  1. Fluxo normal: createReply -> 201 -> sem fallback
- *  2. ErrorMailboxMoveInProgress + fallback funcionando:
- *     createReply -> 503 ErrorMailboxMoveInProgress -> retries esgotados -> sendMail fallback -> 202 -> fallbackUsed = true, Saida persistida
- *  3. Outro 503: 503 + ErrorSomethingElse -> NAO usar fallback
- *  4. 500 + ErrorMailboxMoveInProgress -> NAO usar fallback (status deve ser 503)
- *  5. 403 Forbidden -> NAO usar fallback
- *  6. Fallback falha: createReply -> ErrorMailboxMoveInProgress -> sendMail -> 500 -> erro específico, SEM registro de Saida
- *  7. Retry do createReply preservado (recuperacao antes de esgotar)
- *  8. Seguranca: nenhum log ou erro contem Bearer, access_token, refresh_token, cookie, client_secret, webhook_secret
+ * Requisito Funcional:
+ * - O Help Desk NÃO pode responder criando novo e-mail independente via sendMail.
+ * - Toda resposta deve permanecer na conversa original do Outlook e vinculada à caixa compartilhada.
+ * - Quando createReply esgotar os retries sob ErrorMailboxMoveInProgress, o sistema NÃO envia
+ *   nova mensagem e retorna erro controlado (SIGNATURE_DRAFT_MAILBOX_MOVE).
+ *
+ * Cenários cobertos:
+ *  1. Fluxo normal: createReply -> 201 -> sucesso -> logs createReply_success e threaded_reply_success
+ *  2. ErrorMailboxMoveInProgress + recuperação no retry -> sucesso de threading, Saída persistida
+ *  3. ErrorMailboxMoveInProgress + retries esgotados -> NÃO enviar sendMail, lançar erro controlado, SEM Saída
+ *  4. Outro 503 (ex: ErrorServerBusy) -> NÃO executa retry nem fallback especial
+ *  5. 500 com ErrorMailboxMoveInProgress -> NÃO executa retry (exige status === 503)
+ *  6. 403 Forbidden -> NÃO executa retry nem fallback
+ *  7. Garantia contra duplicidade e isolamento: sendMail NUNCA é chamado em falhas parciais
+ *  8. Segurança: nenhum log ou erro contém Bearer, access_token, refresh_token, cookie ou secrets
+ *  9. Resposta direta na conversa sem assinatura (reply simples): registra threaded_reply_success e threaded_reply_failed
+ * 10. Auditoria de identificadores: preserva destinatário original e messageId sem inventar headers
  */
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { replyToMicrosoftMessage, sendFallbackReply } from "../src/services/microsoft-graph.service.js";
+import { replyToMicrosoftMessage } from "../src/services/microsoft-graph.service.js";
 import { sendAndPersistTicketReply } from "../src/services/ticket-reply.service.js";
 
 const USER_ID = "00000000-0000-4000-8000-000000000099";
@@ -43,7 +51,8 @@ function makeMailboxMove503() {
     JSON.stringify({
       error: {
         code: "ErrorMailboxMoveInProgress",
-        message: "Mailbox move in progress. Try again later., Cross Server access is not allowed for mailbox 82eea528-61e3-4811-81a5-f4fa1ec93e9d",
+        message:
+          "Mailbox move in progress. Try again later., Cross Server access is not allowed for mailbox 82eea528-61e3-4811-81a5-f4fa1ec93e9d",
       },
     }),
     {
@@ -92,7 +101,7 @@ async function captureLogs(fn) {
 // =========================================================================
 // Cenário 1 — Fluxo normal
 // =========================================================================
-test("Cenário 1 — fluxo normal: createReply retorna 201 e não aciona fallback", async () => {
+test("Cenário 1 — fluxo normal: createReply retorna 201 e envia resposta na conversa original", async () => {
   const calls = [];
   const fetchImpl = async (url, options) => {
     calls.push({ url, method: options?.method || "GET" });
@@ -105,48 +114,55 @@ test("Cenário 1 — fluxo normal: createReply retorna 201 e não aciona fallbac
     return new Response("{}", { status: 200 });
   };
 
-  const result = await replyToMicrosoftMessage(
-    USER_ID,
-    {
-      messageId: MESSAGE_ID,
-      message: "Resposta normal",
-      html: SAFE_HTML,
-      inlineAttachment: INLINE_ATTACHMENT,
-      to: RECIPIENT,
-      subject: SUBJECT,
-    },
-    { getAccessToken: async () => "token-ok", fetchImpl },
+  const { result, logs } = await captureLogs(() =>
+    replyToMicrosoftMessage(
+      USER_ID,
+      {
+        messageId: MESSAGE_ID,
+        message: "Resposta normal",
+        html: SAFE_HTML,
+        inlineAttachment: INLINE_ATTACHMENT,
+        to: RECIPIENT,
+        subject: SUBJECT,
+      },
+      { getAccessToken: async () => "token-ok", fetchImpl },
+    ),
   );
 
   assert.equal(result.status, 202);
   assert.equal(result.draftId, "draft-normal-1");
-  assert.equal(result.fallbackUsed, undefined);
   assert.equal(result.signatureDebug.draft_created, true);
   assert.equal(result.signatureDebug.draft_sent, true);
-  // Garante que sendMail NÃO foi chamado
+  // Garante que sendMail NÃO foi chamado em momento algum
   assert.ok(!calls.some((c) => c.url.includes("sendMail")), "sendMail não deve ser chamado no fluxo normal");
+  // Garante logs adequados
+  assert.ok(logs.includes("operation=createReply_success"), "log deve registrar createReply_success");
+  assert.ok(logs.includes("operation=threaded_reply_success"), "log deve registrar threaded_reply_success");
 });
 
 // =========================================================================
-// Cenário 2 — ErrorMailboxMoveInProgress + fallback funcionando
+// Cenário 2 — ErrorMailboxMoveInProgress + recuperação no retry
 // =========================================================================
-test("Cenário 2 — ErrorMailboxMoveInProgress + fallback funcionando: envia via sendMail e persiste Saída", async () => {
+test("Cenário 2 — ErrorMailboxMoveInProgress: recupera na 2a tentativa e mantém threading na conversa original", async () => {
+  let createReplyAttempts = 0;
   const calls = [];
   const fetchImpl = async (url, options) => {
-    calls.push({ url, method: options?.method, body: options?.body ? JSON.parse(options.body) : null });
+    calls.push({ url, method: options?.method || "GET" });
     if (url.endsWith("/createReply")) {
-      return makeMailboxMove503();
+      createReplyAttempts += 1;
+      if (createReplyAttempts === 1) return makeMailboxMove503();
+      return new Response(JSON.stringify({ id: "draft-recovered-1" }), { status: 201 });
     }
-    if (url.endsWith("/sendMail")) {
-      return new Response(null, { status: 202 });
-    }
+    if (options?.method === "PATCH") return new Response("{}", { status: 200 });
+    if (url.endsWith("/attachments")) return new Response("{}", { status: 201 });
+    if (url.endsWith("/send")) return new Response("{}", { status: 202 });
     return new Response("{}", { status: 200 });
   };
 
   const persisted = [];
   const { result, logs } = await captureLogs(() =>
     sendAndPersistTicketReply(
-      { ticket: TICKET, userId: USER_ID, message: "Resposta via fallback" },
+      { ticket: TICKET, userId: USER_ID, message: "Resposta recuperada no retry" },
       {
         getConnectionStatus: async () => ({
           connected: true,
@@ -168,44 +184,93 @@ test("Cenário 2 — ErrorMailboxMoveInProgress + fallback funcionando: envia vi
     ),
   );
 
-  // Verificações do resultado
   assert.equal(result.provider, "microsoft_graph");
-  assert.equal(result.fallbackUsed, true, "deve indicar fallbackUsed = true");
-  assert.equal(result.message.direcao, "Saida");
-  assert.equal(result.message.remetente_email, "suporte@centaurotelecom.com.br");
-  assert.equal(result.message.destinatario_email, RECIPIENT);
+  assert.equal(persisted.length, 1, "deve persistir Saída após confirmação 202");
+  assert.equal(persisted[0].destinatario_email, RECIPIENT);
+  assert.equal(createReplyAttempts, 2, "deve ter tentado exatamente 2 vezes");
+  assert.ok(!calls.some((c) => c.url.includes("sendMail")), "sendMail NUNCA deve ser chamado");
 
-  // Verificação de persistência única
-  assert.equal(persisted.length, 1, "deve persistir exatamente uma mensagem");
-  assert.equal(persisted[0].direcao, "Saida");
-
-  // Verificação da chamada ao Graph sendMail
-  const sendMailCall = calls.find((c) => c.url.includes("sendMail"));
-  assert.ok(sendMailCall, "sendMail deve ter sido chamado como fallback");
-  assert.equal(sendMailCall.body.message.subject, "RE: Chamado #1234 - Falha no link");
-  assert.equal(sendMailCall.body.message.toRecipients[0].emailAddress.address, RECIPIENT);
-  assert.ok(sendMailCall.body.message.body.content.includes("cid:smartdesk-signature"));
-  assert.equal(sendMailCall.body.message.attachments.length, 1);
-  assert.equal(sendMailCall.body.message.attachments[0].name, "signature.png");
-  assert.equal(sendMailCall.body.message.attachments[0].contentId, "smartdesk-signature");
-  assert.equal(sendMailCall.body.message.attachments[0].isInline, true);
-  assert.equal(sendMailCall.body.saveToSentItems, true);
-
-  // Verificação de logs
-  assert.ok(logs.includes("sendMail_fallback"), "log deve conter operação sendMail_fallback");
-  assert.ok(logs.includes("FallbackSuccess"), "log deve registrar sucesso do fallback");
+  // Logs esperados
+  assert.ok(logs.includes("operation=createReply_retry"), "log deve conter createReply_retry");
+  assert.ok(logs.includes("operation=createReply_success"), "log deve conter createReply_success");
+  assert.ok(logs.includes("code=MailboxMoveRecovered"), "log deve indicar recuperação");
+  assert.ok(logs.includes("operation=threaded_reply_success"), "log deve conter threaded_reply_success");
 });
 
 // =========================================================================
-// Cenário 3 — outro 503
+// Cenário 3 — ErrorMailboxMoveInProgress com retries esgotados: NÃO envia sendMail
 // =========================================================================
-test("Cenário 3 — outro 503: 503 com código diferente NÃO usa fallback", async () => {
+test("Cenário 3 — ErrorMailboxMoveInProgress esgotado: NÃO envia sendMail independente, retorna erro e não persiste Saída", async () => {
+  const calls = [];
+  const fetchImpl = async (url, options) => {
+    calls.push({ url, method: options?.method, body: options?.body ? JSON.parse(options.body) : null });
+    if (url.endsWith("/createReply")) {
+      return makeMailboxMove503();
+    }
+    return new Response("{}", { status: 200 });
+  };
+
+  const persisted = [];
+  const { logs } = await captureLogs(async () => {
+    await assert.rejects(
+      sendAndPersistTicketReply(
+        { ticket: TICKET, userId: USER_ID, message: "Tentativa com mailbox move" },
+        {
+          getConnectionStatus: async () => ({
+            connected: true,
+            email: "suporte@centaurotelecom.com.br",
+            display_name: "Suporte Centauro",
+          }),
+          getSignature: async () => makeSignatureConfig(),
+          replyWithMicrosoftGraph: (userId, payload) =>
+            replyToMicrosoftMessage(userId, payload, {
+              getAccessToken: async () => "valid-token-123",
+              fetchImpl,
+            }),
+          persistMessage: async (payload) => {
+            persisted.push(payload);
+            return { id: "persisted-msg-1", ...payload };
+          },
+          helpdeskEmail: () => "suporte@centaurotelecom.com.br",
+        },
+      ),
+      (error) => {
+        assert.equal(error.publicCode, "SIGNATURE_DRAFT_MAILBOX_MOVE");
+        assert.equal(error.statusCode, 502);
+        assert.equal(error.operation, "createReply_mailbox_move_exhausted");
+        assert.ok(error.message.includes("movimentação interna"));
+        return true;
+      },
+    );
+  });
+
+  // Garantia absoluta: NENHUMA chamada a sendMail
+  const sendMailCalls = calls.filter((c) => c.url.includes("sendMail"));
+  assert.equal(sendMailCalls.length, 0, "sendMail NÃO pode ser chamado como fallback sob nenhuma hipótese");
+
+  // Garantia absoluta: NENHUMA mensagem persistida na timeline
+  assert.equal(persisted.length, 0, "NÃO deve persistir mensagem de saída se createReply falhou definitivamente");
+
+  // Garantia de logs: diferenciação explícita
+  assert.ok(logs.includes("operation=createReply_retry"), "log deve conter createReply_retry");
+  assert.ok(logs.includes("operation=createReply_mailbox_move_exhausted"), "log deve conter createReply_mailbox_move_exhausted");
+  assert.ok(logs.includes("operation=threaded_reply_failed"), "log deve conter threaded_reply_failed");
+  assert.ok(!logs.includes("sendMail_fallback"), "NÃO deve conter operação sendMail_fallback");
+  assert.ok(!logs.includes("FallbackSuccess"), "NÃO deve conter FallbackSuccess");
+});
+
+// =========================================================================
+// Cenário 4 — Outro 503 (ex: ErrorServerBusy)
+// =========================================================================
+test("Cenário 4 — outro 503: código diferente de ErrorMailboxMoveInProgress NÃO executa retry nem fallback", async () => {
+  let attempts = 0;
   const calls = [];
   const fetchImpl = async (url, options) => {
     calls.push(url);
     if (url.endsWith("/createReply")) {
+      attempts += 1;
       return new Response(
-        JSON.stringify({ error: { code: "ServiceUnavailable", message: "Back-end server is busy." } }),
+        JSON.stringify({ error: { code: "ErrorServerBusy", message: "Server is busy." } }),
         { status: 503, headers: { "Content-Type": "application/json" } },
       );
     }
@@ -227,22 +292,24 @@ test("Cenário 3 — outro 503: 503 com código diferente NÃO usa fallback", as
     ),
     (error) => {
       assert.equal(error.publicCode, "SIGNATURE_DRAFT_FAILED");
-      assert.notEqual(error.publicCode, "SIGNATURE_DRAFT_MAILBOX_MOVE_FALLBACK_FAILED");
       return true;
     },
   );
 
-  assert.ok(!calls.some((url) => url.includes("sendMail")), "NÃO deve chamar sendMail para outro 503");
+  assert.equal(attempts, 1, "NÃO deve executar retries para erros que não sejam ErrorMailboxMoveInProgress");
+  assert.ok(!calls.some((url) => url.includes("sendMail")), "NÃO deve chamar sendMail");
 });
 
 // =========================================================================
-// Cenário 4 — 500 + ErrorMailboxMoveInProgress
+// Cenário 5 — 500 com ErrorMailboxMoveInProgress
 // =========================================================================
-test("Cenário 4 — 500 + ErrorMailboxMoveInProgress: NÃO usa fallback (exige status === 503)", async () => {
+test("Cenário 5 — 500 com ErrorMailboxMoveInProgress: NÃO executa retry (exige status === 503)", async () => {
+  let attempts = 0;
   const calls = [];
   const fetchImpl = async (url, options) => {
     calls.push(url);
     if (url.endsWith("/createReply")) {
+      attempts += 1;
       return new Response(
         JSON.stringify({ error: { code: "ErrorMailboxMoveInProgress", message: "Mailbox move in progress." } }),
         { status: 500, headers: { "Content-Type": "application/json" } },
@@ -270,13 +337,14 @@ test("Cenário 4 — 500 + ErrorMailboxMoveInProgress: NÃO usa fallback (exige 
     },
   );
 
-  assert.ok(!calls.some((url) => url.includes("sendMail")), "NÃO deve chamar sendMail quando status for 500");
+  assert.equal(attempts, 1, "NÃO deve executar retries se o status for 500 em vez de 503");
+  assert.ok(!calls.some((url) => url.includes("sendMail")), "NÃO deve chamar sendMail");
 });
 
 // =========================================================================
-// Cenário 5 — 403 Forbidden
+// Cenário 6 — 403 Forbidden
 // =========================================================================
-test("Cenário 5 — 403 Forbidden: NÃO usa fallback", async () => {
+test("Cenário 6 — 403 Forbidden: NÃO executa retry nem fallback", async () => {
   const calls = [];
   const fetchImpl = async (url, options) => {
     calls.push(url);
@@ -312,18 +380,17 @@ test("Cenário 5 — 403 Forbidden: NÃO usa fallback", async () => {
 });
 
 // =========================================================================
-// Cenário 6 — Fallback falha
+// Cenário 7 — Garantia contra duplicidade e isolamento em falhas posteriores
 // =========================================================================
-test("Cenário 6 — Fallback falha: createReply -> ErrorMailboxMoveInProgress e sendMail -> 500", async () => {
+test("Cenário 7 — Falha em PATCH ou sendDraft NÃO aciona sendMail e não persiste Saída", async () => {
+  const calls = [];
   const fetchImpl = async (url, options) => {
+    calls.push(url);
     if (url.endsWith("/createReply")) {
-      return makeMailboxMove503();
+      return new Response(JSON.stringify({ id: "draft-1" }), { status: 201 });
     }
-    if (url.endsWith("/sendMail")) {
-      return new Response(
-        JSON.stringify({ error: { code: "GeneralException", message: "Internal server error during sendMail." } }),
-        { status: 500, headers: { "Content-Type": "application/json" } },
-      );
+    if (options?.method === "PATCH") {
+      return new Response(JSON.stringify({ error: { code: "ErrorInvalidHtml" } }), { status: 500 });
     }
     return new Response("{}", { status: 200 });
   };
@@ -331,7 +398,7 @@ test("Cenário 6 — Fallback falha: createReply -> ErrorMailboxMoveInProgress e
   const persisted = [];
   await assert.rejects(
     sendAndPersistTicketReply(
-      { ticket: TICKET, userId: USER_ID, message: "Resposta com falha de fallback" },
+      { ticket: TICKET, userId: USER_ID, message: "Falha de PATCH" },
       {
         getConnectionStatus: async () => ({
           connected: true,
@@ -346,65 +413,19 @@ test("Cenário 6 — Fallback falha: createReply -> ErrorMailboxMoveInProgress e
           }),
         persistMessage: async (payload) => {
           persisted.push(payload);
-          return { id: "persisted-msg-1", ...payload };
+          return { id: "msg-id", ...payload };
         },
         helpdeskEmail: () => "suporte@centaurotelecom.com.br",
       },
     ),
-    (error) => {
-      assert.equal(error.publicCode, "SIGNATURE_DRAFT_MAILBOX_MOVE_FALLBACK_FAILED");
-      assert.equal(error.statusCode, 502);
-      assert.equal(error.operation, "sendMail_fallback");
-      assert.equal(error.microsoftDiagnosticError, true);
-      assert.ok(error.message.includes("movimentação interna"));
-      return true;
-    },
   );
 
-  // CRÍTICO: nenhuma mensagem de saída deve ser persistida se o fallback falhar!
-  assert.equal(persisted.length, 0, "NÃO deve persistir mensagem se o fallback falhar");
+  assert.equal(persisted.length, 0, "NÃO deve persistir Saída se o PATCH do rascunho falhar");
+  assert.ok(!calls.some((url) => url.includes("sendMail")), "NÃO deve chamar sendMail se o PATCH falhar");
 });
 
 // =========================================================================
-// Cenário 7 — Retry do createReply
-// =========================================================================
-test("Cenário 7 — Retry do createReply: recupera na 2a tentativa sem acionar fallback", async () => {
-  let createReplyAttempts = 0;
-  const calls = [];
-  const fetchImpl = async (url, options) => {
-    calls.push(url);
-    if (url.endsWith("/createReply")) {
-      createReplyAttempts += 1;
-      if (createReplyAttempts === 1) return makeMailboxMove503();
-      return new Response(JSON.stringify({ id: "draft-recovered" }), { status: 201 });
-    }
-    if (options?.method === "PATCH") return new Response("{}", { status: 200 });
-    if (url.endsWith("/attachments")) return new Response("{}", { status: 201 });
-    if (url.endsWith("/send")) return new Response("{}", { status: 202 });
-    return new Response("{}", { status: 200 });
-  };
-
-  const result = await replyToMicrosoftMessage(
-    USER_ID,
-    {
-      messageId: MESSAGE_ID,
-      message: "Teste",
-      html: SAFE_HTML,
-      inlineAttachment: INLINE_ATTACHMENT,
-      to: RECIPIENT,
-      subject: SUBJECT,
-    },
-    { getAccessToken: async () => "token-ok", fetchImpl },
-  );
-
-  assert.equal(result.status, 202);
-  assert.equal(result.draftId, "draft-recovered");
-  assert.equal(createReplyAttempts, 2, "deve ter tentado 2 vezes");
-  assert.ok(!calls.some((url) => url.includes("sendMail")), "NÃO deve ter acionado fallback pois recuperou no retry");
-});
-
-// =========================================================================
-// Cenário 8 — Segurança
+// Cenário 8 — Segurança e sanitização
 // =========================================================================
 test("Cenário 8 — Segurança: nenhum log ou erro contém credenciais ou segredos", async () => {
   const sensitiveToken = "Bearer-secret-access-token-987654";
@@ -414,34 +435,34 @@ test("Cenário 8 — Segurança: nenhum log ou erro contém credenciais ou segre
     if (url.endsWith("/createReply")) {
       return makeMailboxMove503();
     }
-    if (url.endsWith("/sendMail")) {
-      return new Response(null, { status: 202 });
-    }
     return new Response("{}", { status: 200 });
   };
 
-  const { logs } = await captureLogs(() =>
-    sendAndPersistTicketReply(
-      { ticket: TICKET, userId: USER_ID, message: "Resposta de teste" },
-      {
-        getConnectionStatus: async () => ({
-          connected: true,
-          email: "suporte@centaurotelecom.com.br",
-          display_name: "Suporte Centauro",
-        }),
-        getSignature: async () => makeSignatureConfig(),
-        replyWithMicrosoftGraph: (userId, payload) =>
-          replyToMicrosoftMessage(userId, payload, {
-            getAccessToken: async () => sensitiveToken,
-            fetchImpl,
+  const { logs } = await captureLogs(async () => {
+    try {
+      await sendAndPersistTicketReply(
+        { ticket: TICKET, userId: USER_ID, message: "Resposta de teste" },
+        {
+          getConnectionStatus: async () => ({
+            connected: true,
+            email: "suporte@centaurotelecom.com.br",
+            display_name: "Suporte Centauro",
           }),
-        persistMessage: async (payload) => ({ id: "msg-id", ...payload }),
-        helpdeskEmail: () => "suporte@centaurotelecom.com.br",
-      },
-    ),
-  );
+          getSignature: async () => makeSignatureConfig(),
+          replyWithMicrosoftGraph: (userId, payload) =>
+            replyToMicrosoftMessage(userId, payload, {
+              getAccessToken: async () => sensitiveToken,
+              fetchImpl,
+            }),
+          persistMessage: async (payload) => ({ id: "msg-id", ...payload }),
+          helpdeskEmail: () => "suporte@centaurotelecom.com.br",
+        },
+      );
+    } catch {
+      // Ignora erro esperado
+    }
+  });
 
-  // Verificar que nenhuma credencial ou segredo vazou nos logs
   const forbiddenKeywords = [
     sensitiveToken,
     sensitiveSecret,
@@ -459,4 +480,84 @@ test("Cenário 8 — Segurança: nenhum log ou erro contém credenciais ou segre
       `Logs de diagnóstico NUNCA devem conter: ${keyword}`,
     );
   }
+});
+
+// =========================================================================
+// Cenário 9 — Resposta direta na conversa sem assinatura
+// =========================================================================
+test("Cenário 9 — Resposta direta sem assinatura usa endpoint /reply e registra threaded_reply_success", async () => {
+  const calls = [];
+  const fetchImpl = async (url, options) => {
+    calls.push({ url, method: options?.method || "GET" });
+    if (url.endsWith("/reply")) {
+      return new Response(null, { status: 202 });
+    }
+    return new Response("{}", { status: 200 });
+  };
+
+  const { logs } = await captureLogs(() =>
+    replyToMicrosoftMessage(
+      USER_ID,
+      {
+        messageId: MESSAGE_ID,
+        message: "Resposta de texto simples",
+        html: "<div>Resposta de texto simples</div>",
+      },
+      { getAccessToken: async () => "token-ok", fetchImpl },
+    ),
+  );
+
+  const replyCall = calls.find((c) => c.url.includes("/reply"));
+  assert.ok(replyCall, "deve ter chamado POST /me/messages/{id}/reply");
+  assert.ok(!calls.some((c) => c.url.includes("sendMail")), "sendMail não pode ser chamado");
+  assert.ok(logs.includes("operation=threaded_reply_success"), "deve registrar threaded_reply_success");
+});
+
+// =========================================================================
+// Cenário 10 — Auditoria de identificadores reais da conversa
+// =========================================================================
+test("Cenário 10 — Resposta preserva identificadores reais e não inventa Message-ID ou conversationId", async () => {
+  let createdReplyUrl = null;
+  const fetchImpl = async (url, options) => {
+    if (url.endsWith("/createReply")) {
+      createdReplyUrl = url;
+      return new Response(JSON.stringify({ id: "draft-audited-1" }), { status: 201 });
+    }
+    if (options?.method === "PATCH") return new Response("{}", { status: 200 });
+    if (url.endsWith("/attachments")) return new Response("{}", { status: 201 });
+    if (url.endsWith("/send")) return new Response("{}", { status: 202 });
+    return new Response("{}", { status: 200 });
+  };
+
+  const persisted = [];
+  await sendAndPersistTicketReply(
+    { ticket: TICKET, userId: USER_ID, message: "Mensagem auditada" },
+    {
+      getConnectionStatus: async () => ({
+        connected: true,
+        email: "suporte@centaurotelecom.com.br",
+        display_name: "Suporte Centauro",
+      }),
+      getSignature: async () => makeSignatureConfig(),
+      replyWithMicrosoftGraph: (userId, payload) =>
+        replyToMicrosoftMessage(userId, payload, {
+          getAccessToken: async () => "token-ok",
+          fetchImpl,
+        }),
+      persistMessage: async (payload) => {
+        persisted.push(payload);
+        return { id: "persisted-msg-audited", ...payload };
+      },
+      helpdeskEmail: () => "suporte@centaurotelecom.com.br",
+    },
+  );
+
+  // Verifica que createReply foi chamado exatamente com o MESSAGE_ID original (outlook_last_message_id)
+  assert.ok(
+    createdReplyUrl.includes(encodeURIComponent(MESSAGE_ID)),
+    "createReply deve ser chamado na URL da mensagem original",
+  );
+  // Verifica persistência com destinatário original
+  assert.equal(persisted[0].destinatario_email, RECIPIENT);
+  assert.equal(persisted[0].remetente_email, "suporte@centaurotelecom.com.br");
 });
