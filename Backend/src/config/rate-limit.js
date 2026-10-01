@@ -65,35 +65,50 @@ if (redisUrl && redisToken) {
       error.message,
     );
   }
+} else if (isProduction) {
+  console.warn(
+    "Aviso: Rate limiting distribuído (Upstash Redis) não configurado em produção. Utilizando fallback em memória de forma controlada.",
+  );
 }
 
-function createLimiter(prefix, maxRequests, windowStr, windowMs) {
-  if (redisClient) {
+export function createLimiter(
+  prefix,
+  maxRequests,
+  windowStr,
+  windowMs,
+  customRedis = redisClient,
+) {
+  const fallbackLimiter = new InMemorySlidingWindowLimiter(
+    maxRequests,
+    windowMs,
+  );
+
+  if (customRedis) {
     const upstashLimiter = new Ratelimit({
-      redis: redisClient,
+      redis: customRedis,
       limiter: Ratelimit.slidingWindow(maxRequests, windowStr),
       prefix: `helpdesk:ratelimit:${prefix}`,
       analytics: false,
     });
     return {
-      limit: async (identifier) => upstashLimiter.limit(identifier),
-    };
-  }
-
-  // Uma Function da Vercel não compartilha memória com as demais instâncias.
-  // Em produção, nunca use o fallback local como se ele fosse distribuído.
-  if (isProduction) {
-    return {
-      limit: async () => {
-        throw Object.assign(
-          new Error("Rate limiting distribuído não configurado."),
-          { code: "RATE_LIMIT_UNAVAILABLE" },
-        );
+      isDistributed: true,
+      limit: async (identifier) => {
+        try {
+          return await upstashLimiter.limit(identifier);
+        } catch (error) {
+          console.warn(
+            `Aviso: Falha no Upstash Redis para limiter [${prefix}]. Acionando fallback em memória:`,
+            error.message,
+          );
+          return await fallbackLimiter.limit(identifier);
+        }
       },
     };
   }
 
-  return new InMemorySlidingWindowLimiter(maxRequests, windowMs);
+  // Quando Upstash não estiver configurado ou disponível, utiliza o fallback
+  // em memória já existente para não indisponibilizar a autenticação e as rotas.
+  return fallbackLimiter;
 }
 
 // Limitadores configurados
@@ -149,12 +164,7 @@ export function rateLimitMiddleware(
       next();
     } catch (error) {
       console.error("Erro no rate limiting:", error.message);
-      if (isProduction) {
-        return res.status(503).json({
-          success: false,
-          message: "Serviço temporariamente indisponível. Tente novamente em alguns instantes.",
-        });
-      }
+      // Fail-open: falha inesperada no serviço de rate limit não deve indisponibilizar a aplicação com 503
       next();
     }
   };
