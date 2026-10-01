@@ -50,14 +50,14 @@ class InMemorySlidingWindowLimiter {
 }
 
 let redisClient = null;
-if (
-  process.env.UPSTASH_REDIS_REST_URL &&
-  process.env.UPSTASH_REDIS_REST_TOKEN
-) {
+const isProduction = process.env.NODE_ENV === "production";
+const redisUrl = process.env.UPSTASH_REDIS_REST_URL?.trim();
+const redisToken = process.env.UPSTASH_REDIS_REST_TOKEN?.trim();
+if (redisUrl && redisToken) {
   try {
     redisClient = new Redis({
-      url: process.env.UPSTASH_REDIS_REST_URL,
-      token: process.env.UPSTASH_REDIS_REST_TOKEN,
+      url: redisUrl,
+      token: redisToken,
     });
   } catch (error) {
     console.warn(
@@ -77,6 +77,19 @@ function createLimiter(prefix, maxRequests, windowStr, windowMs) {
     });
     return {
       limit: async (identifier) => upstashLimiter.limit(identifier),
+    };
+  }
+
+  // Uma Function da Vercel não compartilha memória com as demais instâncias.
+  // Em produção, nunca use o fallback local como se ele fosse distribuído.
+  if (isProduction) {
+    return {
+      limit: async () => {
+        throw Object.assign(
+          new Error("Rate limiting distribuído não configurado."),
+          { code: "RATE_LIMIT_UNAVAILABLE" },
+        );
+      },
     };
   }
 
@@ -136,6 +149,12 @@ export function rateLimitMiddleware(
       next();
     } catch (error) {
       console.error("Erro no rate limiting:", error.message);
+      if (isProduction) {
+        return res.status(503).json({
+          success: false,
+          message: "Serviço temporariamente indisponível. Tente novamente em alguns instantes.",
+        });
+      }
       next();
     }
   };

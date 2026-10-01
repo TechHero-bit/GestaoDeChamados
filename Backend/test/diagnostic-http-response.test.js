@@ -366,3 +366,22 @@ test("errorMiddleware: campos ausentes no graphDetails ficam null (não undefine
   assert.equal(parsed.diagnostic.requestId, null);
   assert.equal(parsed.diagnostic.clientRequestId, null);
 });
+
+test("errorMiddleware: produção não expõe o bloco temporário diagnostic", () => {
+  const previousNodeEnv = process.env.NODE_ENV;
+  process.env.NODE_ENV = "production";
+  try {
+    const res = makeMockRes();
+    errorMiddleware(
+      makeSignatureErr({ graphStatus: 403, graphCode: "ErrorAccessDenied" }),
+      makeReq(),
+      res,
+      () => {},
+    );
+    assert.equal(res._body.diagnostic, undefined);
+    assert.equal(res._body.code, "SIGNATURE_DRAFT_FAILED");
+  } finally {
+    if (previousNodeEnv === undefined) delete process.env.NODE_ENV;
+    else process.env.NODE_ENV = previousNodeEnv;
+  }
+});

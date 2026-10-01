@@ -17,8 +17,8 @@ export async function sendTicketReply({
     );
   }
 
-  const replyUrl = process.env.POWER_AUTOMATE_REPLY_URL;
-  const replySecret = process.env.POWER_AUTOMATE_REPLY_SECRET;
+  const replyUrl = process.env.POWER_AUTOMATE_REPLY_URL?.trim();
+  const replySecret = process.env.POWER_AUTOMATE_REPLY_SECRET?.trim();
 
   if (!replyUrl) {
     throw Object.assign(

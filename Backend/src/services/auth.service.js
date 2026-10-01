@@ -8,7 +8,7 @@ const DEFAULT_ABSOLUTE_TIMEOUT_HOURS = 8;
 const ACTIVITY_UPDATE_THROTTLE_MS = 60 * 1000; // 1 minuto
 
 function getJwtSecret() {
-  const secret = process.env.JWT_SECRET;
+  const secret = process.env.JWT_SECRET?.trim();
   if (!secret || secret.length < 32) {
     throw Object.assign(
       new Error(

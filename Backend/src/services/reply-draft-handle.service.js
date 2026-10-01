@@ -4,7 +4,7 @@ import { SignJWT, jwtVerify } from "jose";
 const HANDLE_AUDIENCE = "ticket-reply-draft";
 
 function secret() {
-  const value = process.env.JWT_SECRET;
+  const value = process.env.JWT_SECRET?.trim();
   if (!value || value.length < 32) {
     throw Object.assign(new Error("JWT_SECRET não configurado ou muito curto."), { statusCode: 500 });
   }

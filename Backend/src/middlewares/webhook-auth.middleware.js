@@ -1,10 +1,12 @@
+import { timingSafeEqual } from "node:crypto";
+
 /**
  * Middleware de autenticação do webhook.
  * Compara header x-webhook-secret com WEBHOOK_SECRET.
  */
 export function webhookAuth(req, res, next) {
   const secret = req.headers["x-webhook-secret"];
-  const expectedSecret = process.env.WEBHOOK_SECRET;
+  const expectedSecret = process.env.WEBHOOK_SECRET?.trim();
 
   if (!expectedSecret) {
     console.error("❌ WEBHOOK_SECRET não configurado no .env");
@@ -28,4 +30,3 @@ export function webhookAuth(req, res, next) {
 
   next();
 }
-import { timingSafeEqual } from "node:crypto";

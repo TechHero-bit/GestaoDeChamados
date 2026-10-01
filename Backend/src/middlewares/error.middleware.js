@@ -97,7 +97,9 @@ export function errorMiddleware(err, req, res, _next) {
       message,
       code: errorCode,
       ...attachmentDetails,
-      ...(diagnosticBlock ? { diagnostic: diagnosticBlock } : {}),
+      ...(diagnosticBlock && process.env.NODE_ENV !== "production"
+        ? { diagnostic: diagnosticBlock }
+        : {}),
     });
   }
 

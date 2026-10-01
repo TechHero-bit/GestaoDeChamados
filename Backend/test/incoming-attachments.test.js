@@ -203,7 +203,7 @@ test("falha de confirmação marca o anexo como Falhou sem fingir disponibilidad
   assert.equal(database.attachments[0].processing_error, "OBJECT_NOT_FOUND");
 });
 
-test("Caso 1 — PDF com divergência de tamanho entre Graph e Storage é marcado como Disponível", async () => {
+test("PDF com divergência de tamanho entre Graph e Storage é marcado como Falhou", async () => {
   const database = new AttachmentDatabase();
   const [prepared] = await prepareIncomingAttachments(
     {
@@ -227,18 +227,19 @@ test("Caso 1 — PDF com divergência de tamanho entre Graph e Storage é marcad
   // Storage contém os bytes reais de contentBytes enviados pelo Power Automate
   database.objects.set(row.storage_path, { size: 97261, mimetype: "application/pdf" });
 
-  const completed = await completeIncomingAttachment(
-    { messageId: "outlook-message-1", attachmentId: "pdf-attachment-1" },
-    { supabase: database },
+  await assert.rejects(
+    completeIncomingAttachment(
+      { messageId: "outlook-message-1", attachmentId: "pdf-attachment-1" },
+      { supabase: database },
+    ),
+    { statusCode: 409 },
   );
 
-  assert.equal(completed.processing_status, "Disponivel");
-  assert.equal(database.attachments[0].processing_status, "Disponivel");
-  assert.equal(database.attachments[0].processing_error, null);
-  assert.equal(completed.file_size, 97497); // Metadado original do Graph preservado
+  assert.equal(database.attachments[0].processing_status, "Falhou");
+  assert.equal(database.attachments[0].processing_error, "SIZE_MISMATCH");
 });
 
-test("Caso 1 — PNG inline com divergência de tamanho entre Graph e Storage é marcado como Disponível", async () => {
+test("PNG inline com divergência de tamanho entre Graph e Storage é marcado como Falhou", async () => {
   const database = new AttachmentDatabase();
   await prepareIncomingAttachments(
     {
@@ -261,16 +262,16 @@ test("Caso 1 — PNG inline com divergência de tamanho entre Graph e Storage é
   const row = database.attachments[0];
   database.objects.set(row.storage_path, { size: 142344, mimetype: "image/png" });
 
-  const completed = await completeIncomingAttachment(
-    { messageId: "outlook-message-1", attachmentId: "png-inline-1" },
-    { supabase: database },
+  await assert.rejects(
+    completeIncomingAttachment(
+      { messageId: "outlook-message-1", attachmentId: "png-inline-1" },
+      { supabase: database },
+    ),
+    { statusCode: 409 },
   );
 
-  assert.equal(completed.processing_status, "Disponivel");
-  assert.equal(completed.is_inline, true);
-  assert.equal(completed.content_id, "image001.png@01D");
-  assert.equal(database.attachments[0].processing_status, "Disponivel");
-  assert.equal(database.attachments[0].processing_error, null);
+  assert.equal(database.attachments[0].processing_status, "Falhou");
+  assert.equal(database.attachments[0].processing_error, "SIZE_MISMATCH");
 });
 
 test("Caso 2 — objeto inexistente no Storage marca anexo como Falhou com HTTP 409", async () => {
@@ -357,7 +358,7 @@ test("Caso 4 — objeto já disponível retorna sem reprocessar mantendo idempot
     { supabase: database },
   );
   const row = database.attachments[0];
-  database.objects.set(row.storage_path, { size: 97261, mimetype: "application/pdf" });
+  database.objects.set(row.storage_path, { size: 97497, mimetype: "application/pdf" });
 
   const firstComplete = await completeIncomingAttachment(
     { messageId: "outlook-message-1", attachmentId: "outlook-attachment-1" },
@@ -389,7 +390,7 @@ test("Caso 5 — preserva ou atualiza content_type conforme metadados do Storage
     },
     { supabase: db1 },
   );
-  db1.objects.set(db1.attachments[0].storage_path, { size: 97261, mimetype: "application/pdf" });
+  db1.objects.set(db1.attachments[0].storage_path, { size: 97497, mimetype: "application/pdf" });
   const completed1 = await completeIncomingAttachment(
     { messageId: "outlook-message-1", attachmentId: "outlook-attachment-1" },
     { supabase: db1 },
@@ -406,7 +407,7 @@ test("Caso 5 — preserva ou atualiza content_type conforme metadados do Storage
     },
     { supabase: db2 },
   );
-  db2.objects.set(db2.attachments[0].storage_path, { size: 97261, mimetype: "application/octet-stream" });
+  db2.objects.set(db2.attachments[0].storage_path, { size: 97497, mimetype: "application/octet-stream" });
   const completed2 = await completeIncomingAttachment(
     { messageId: "outlook-message-1", attachmentId: "outlook-attachment-1" },
     { supabase: db2 },

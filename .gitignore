@@ -38,14 +38,5 @@ Thumbs.db
 # Coverage
 coverage/
 
-# Database & Migrations
-database/
-database/migrations/
-database/Migrations/
-# Nova migration de assinaturas
-!database/
-database/*
-!database/migrations/
-database/migrations/*
-!database/migrations/008_add_user_email_signatures.sql
-!database/migrations/009_create_ticket_message_attachments.sql
+# Database
+# Migrations são código de produção e precisam permanecer versionadas.

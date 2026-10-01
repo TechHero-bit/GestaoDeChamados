@@ -5,8 +5,8 @@ let client;
 export function getSupabase() {
   if (client) return client;
 
-  const supabaseUrl = process.env.SUPABASE_URL;
-  const supabaseKey = process.env.SUPABASE_SECRET_KEY;
+  const supabaseUrl = process.env.SUPABASE_URL?.trim();
+  const supabaseKey = process.env.SUPABASE_SECRET_KEY?.trim();
 
   if (!supabaseUrl || !supabaseKey) {
     throw Object.assign(new Error("Supabase não configurado no servidor."), {

@@ -372,6 +372,13 @@ export async function completeIncomingAttachment(
     throw unavailableAttachmentError("O tamanho do arquivo enviado excede o limite suportado.");
   }
 
+  if (objectSize !== Number(row.file_size)) {
+    await markFailed(supabase, row, "SIZE_MISMATCH");
+    throw unavailableAttachmentError(
+      "O tamanho do arquivo enviado não corresponde ao anexo recebido.",
+    );
+  }
+
   const actualContentType = normalizeContentType(object.metadata?.mimetype);
   const updated = await updateAttachment(supabase, row.id, {
     processing_status: AVAILABLE_STATUS,
