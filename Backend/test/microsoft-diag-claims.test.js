@@ -329,3 +329,117 @@ test("pipeline completa: JWT sem scp nem roles → unknown em todos os estágios
   assert.equal(analysis.tokenType, "unknown");
   assert.equal(analysis.audienceLooksLikeGraph, false);
 });
+
+// ── querySharedMailboxUser ────────────────────────────────────────────────────
+
+import {
+  querySharedMailboxInbox,
+  querySharedMailboxUser,
+} from "../src/controllers/microsoft-diagnostic.controller.js";
+
+test("querySharedMailboxUser: sucesso retorna campos seguros do objeto de usuário", async () => {
+  const result = await querySharedMailboxUser("safe-token", "suporte@empresa.com", {
+    fetchImpl: async (url, options) => {
+      assert.ok(url.includes("/users/suporte%40empresa.com"), "URL deve ter o mailbox codificado");
+      assert.ok(url.includes("$select=id,displayName,mail,userPrincipalName"), "deve selecionar apenas campos seguros");
+      return new Response(
+        JSON.stringify({
+          id: "mailbox-oid-123",
+          displayName: "Suporte TI",
+          mail: "suporte@empresa.com",
+          userPrincipalName: "suporte@empresa.com",
+        }),
+        { status: 200, headers: { "request-id": "req-mb-1" } },
+      );
+    },
+  });
+
+  assert.equal(result.status, 200);
+  assert.equal(result.success, true);
+  assert.equal(result.requestId, "req-mb-1");
+  assert.equal(result.mailbox.id, "mailbox-oid-123");
+  assert.equal(result.mailbox.displayName, "Suporte TI");
+  assert.equal(result.mailbox.mail, "suporte@empresa.com");
+  // SEGURANÇA: token não vaza
+  const serialized = JSON.stringify(result);
+  assert.equal(serialized.includes("safe-token"), false);
+});
+
+test("querySharedMailboxUser: 403 retorna status, code, message e requestId", async () => {
+  const result = await querySharedMailboxUser("tok", "suporte@empresa.com", {
+    fetchImpl: async () =>
+      new Response(
+        JSON.stringify({ error: { code: "ErrorAccessDenied", message: "Access denied." } }),
+        { status: 403, headers: { "request-id": "req-mb-403" } },
+      ),
+  });
+  assert.equal(result.status, 403);
+  assert.equal(result.success, false);
+  assert.equal(result.code, "ErrorAccessDenied");
+  assert.equal(result.requestId, "req-mb-403");
+  const serialized = JSON.stringify(result);
+  assert.equal(serialized.includes("tok"), false);
+});
+
+test("querySharedMailboxUser: erro de rede retorna NETWORK_ERROR sem expor token", async () => {
+  const result = await querySharedMailboxUser("net-tok", "suporte@empresa.com", {
+    fetchImpl: async () => { throw new Error("fetch failed"); },
+  });
+  assert.equal(result.status, null);
+  assert.equal(result.success, false);
+  assert.equal(result.code, "NETWORK_ERROR");
+  const serialized = JSON.stringify(result);
+  assert.equal(serialized.includes("net-tok"), false);
+});
+
+// ── querySharedMailboxInbox ───────────────────────────────────────────────────
+
+test("querySharedMailboxInbox: sucesso retorna id e displayName da pasta", async () => {
+  const result = await querySharedMailboxInbox("safe-inbox-token", "suporte@empresa.com", {
+    fetchImpl: async (url) => {
+      assert.ok(url.includes("/mailFolders/inbox"), "URL deve incluir /mailFolders/inbox");
+      assert.ok(url.includes("$select=id,displayName"), "deve selecionar apenas campos seguros");
+      return new Response(
+        JSON.stringify({ id: "folder-inbox-xyz", displayName: "Inbox" }),
+        { status: 200, headers: { "request-id": "req-inbox-1" } },
+      );
+    },
+  });
+
+  assert.equal(result.status, 200);
+  assert.equal(result.success, true);
+  assert.equal(result.requestId, "req-inbox-1");
+  assert.equal(result.folder.id, "folder-inbox-xyz");
+  assert.equal(result.folder.displayName, "Inbox");
+  // SEGURANÇA: token não vaza
+  const serialized = JSON.stringify(result);
+  assert.equal(serialized.includes("safe-inbox-token"), false);
+});
+
+test("querySharedMailboxInbox: 403 retorna status, code e requestId", async () => {
+  const result = await querySharedMailboxInbox("tok2", "suporte@empresa.com", {
+    fetchImpl: async () =>
+      new Response(
+        JSON.stringify({ error: { code: "ErrorAccessDenied", message: "Access denied." } }),
+        { status: 403, headers: { "request-id": "req-inbox-403" } },
+      ),
+  });
+  assert.equal(result.status, 403);
+  assert.equal(result.success, false);
+  assert.equal(result.code, "ErrorAccessDenied");
+  assert.equal(result.requestId, "req-inbox-403");
+  const serialized = JSON.stringify(result);
+  assert.equal(serialized.includes("tok2"), false);
+});
+
+test("querySharedMailboxInbox: erro de rede retorna NETWORK_ERROR sem expor token", async () => {
+  const result = await querySharedMailboxInbox("net-inbox-tok", "suporte@empresa.com", {
+    fetchImpl: async () => { throw new Error("connection refused"); },
+  });
+  assert.equal(result.status, null);
+  assert.equal(result.success, false);
+  assert.equal(result.code, "NETWORK_ERROR");
+  const serialized = JSON.stringify(result);
+  assert.equal(serialized.includes("net-inbox-tok"), false);
+});
+

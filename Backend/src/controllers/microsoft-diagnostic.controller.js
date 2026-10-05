@@ -6,7 +6,11 @@
  *   2. Descriptografar o token usando MICROSOFT_TOKEN_ENCRYPTION_KEY existente.
  *   3. Obter access token válido via getValidMicrosoftAccessToken.
  *   4. Inspecionar claims do JWT em memória sem expor o token.
- *   5. Consultar /me (se token delegado) e a mensagem na caixa compartilhada.
+ *   5. Consultar /me (se token delegado).
+ *   6. Testar 3 endpoints na shared mailbox com o mesmo token:
+ *      a. GET /users/{mailbox}              → acesso ao objeto do usuário
+ *      b. GET /users/{mailbox}/mailFolders/inbox → acesso à Inbox
+ *      c. GET /users/{mailbox}/messages/{id}    → acesso à mensagem específica
  *
  * Segurança:
  *   - NUNCA retorna tokens, secrets, refresh_token ou credenciais.
@@ -329,6 +333,131 @@ export async function queryGraphMe(accessToken, { fetchImpl = globalThis.fetch }
   };
 }
 
+// ── Shared mailbox probes ──────────────────────────────────────────────────────
+
+/**
+ * Sonda GET /users/{mailbox} — verifica acesso ao objeto do usuário da shared mailbox.
+ * Retorna apenas campos não sensíveis: id, displayName, mail, userPrincipalName.
+ *
+ * @param {string} accessToken  Token de acesso (usado e descartado internamente).
+ * @param {string} mailbox      Endereço da shared mailbox.
+ * @returns {object}  Resultado seguro.
+ */
+export async function querySharedMailboxUser(
+  accessToken,
+  mailbox,
+  { fetchImpl = globalThis.fetch } = {},
+) {
+  const url =
+    `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(mailbox)}` +
+    `?$select=id,displayName,mail,userPrincipalName`;
+
+  let response;
+  try {
+    response = await fetchImpl(url, {
+      method: "GET",
+      headers: { Authorization: `Bearer ${accessToken}`, Accept: "application/json" },
+      signal: AbortSignal.timeout(10_000),
+    });
+  } catch (err) {
+    return {
+      status: null,
+      success: false,
+      code: "NETWORK_ERROR",
+      message: err?.message?.slice(0, 200) ?? "Erro de rede.",
+      requestId: null,
+    };
+  }
+
+  const body = await safeReadJson(response);
+  const { code, message, requestId } = extractGraphError(body, response);
+
+  if (response.status === 200) {
+    return {
+      status: 200,
+      success: true,
+      requestId: requestId ?? null,
+      mailbox: {
+        id: typeof body.id === "string" ? body.id : null,
+        displayName:
+          typeof body.displayName === "string" ? body.displayName.slice(0, 200) : null,
+        mail: typeof body.mail === "string" ? body.mail.slice(0, 200) : null,
+        userPrincipalName:
+          typeof body.userPrincipalName === "string"
+            ? body.userPrincipalName.slice(0, 200)
+            : null,
+      },
+    };
+  }
+
+  return {
+    status: response.status,
+    success: false,
+    code: code ?? null,
+    message: message ?? null,
+    requestId: requestId ?? null,
+  };
+}
+
+/**
+ * Sonda GET /users/{mailbox}/mailFolders/inbox — verifica acesso à Inbox da shared mailbox.
+ * Retorna apenas id e displayName da pasta.
+ *
+ * @param {string} accessToken  Token de acesso (usado e descartado internamente).
+ * @param {string} mailbox      Endereço da shared mailbox.
+ * @returns {object}  Resultado seguro.
+ */
+export async function querySharedMailboxInbox(
+  accessToken,
+  mailbox,
+  { fetchImpl = globalThis.fetch } = {},
+) {
+  const url =
+    `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(mailbox)}` +
+    `/mailFolders/inbox?$select=id,displayName`;
+
+  let response;
+  try {
+    response = await fetchImpl(url, {
+      method: "GET",
+      headers: { Authorization: `Bearer ${accessToken}`, Accept: "application/json" },
+      signal: AbortSignal.timeout(10_000),
+    });
+  } catch (err) {
+    return {
+      status: null,
+      success: false,
+      code: "NETWORK_ERROR",
+      message: err?.message?.slice(0, 200) ?? "Erro de rede.",
+      requestId: null,
+    };
+  }
+
+  const body = await safeReadJson(response);
+  const { code, message, requestId } = extractGraphError(body, response);
+
+  if (response.status === 200) {
+    return {
+      status: 200,
+      success: true,
+      requestId: requestId ?? null,
+      folder: {
+        id: typeof body.id === "string" ? body.id : null,
+        displayName:
+          typeof body.displayName === "string" ? body.displayName.slice(0, 200) : null,
+      },
+    };
+  }
+
+  return {
+    status: response.status,
+    success: false,
+    code: code ?? null,
+    message: message ?? null,
+    requestId: requestId ?? null,
+  };
+}
+
 // ── Controller principal ───────────────────────────────────────────────────────
 
 /**
@@ -446,105 +575,108 @@ export async function diagSharedMailboxMessage(req, res) {
     );
   }
 
-  // ── Estágio 4: Consultar Microsoft Graph (shared mailbox) ───────────────────
-  const graphUrl =
+  // ── Estágio 4: Testar acesso à shared mailbox (3 probes em paralelo) ─────────
+  // Os três requests usam o mesmo token e são disparados simultaneamente para
+  // minimizar latência total. O token é descartado logo após todos completarem.
+  console.log(
+    `[MICROSOFT_DIAG] stage=sharedMailbox.probes userId=${safeUserId}` +
+      ` messageId=${maskedMessageId} sharedMailbox=${SHARED_MAILBOX}`,
+  );
+
+  const messageUrl =
     `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(SHARED_MAILBOX)}` +
     `/messages/${encodeURIComponent(safeMessageId)}` +
     `?$select=id,subject,from,receivedDateTime,conversationId`;
 
-  console.log(
-    `[MICROSOFT_DIAG] stage=graph.request userId=${safeUserId}` +
-      ` messageId=${maskedMessageId} sharedMailbox=${SHARED_MAILBOX}`,
-  );
-
-  let graphResponse;
-  try {
-    graphResponse = await fetch(graphUrl, {
+  // Executa os 3 probes em paralelo com o mesmo token
+  const [mailboxUserResult, inboxResult, rawMessageResponse] = await Promise.allSettled([
+    querySharedMailboxUser(accessToken, SHARED_MAILBOX),
+    querySharedMailboxInbox(accessToken, SHARED_MAILBOX),
+    fetch(messageUrl, {
       method: "GET",
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        Accept: "application/json",
-      },
+      headers: { Authorization: `Bearer ${accessToken}`, Accept: "application/json" },
       signal: AbortSignal.timeout(15_000),
-    });
-  } catch (err) {
-    // Garantia: token não vaza após uso
-    accessToken = null;
+    }),
+  ]);
 
-    console.log(
-      `[MICROSOFT_DIAG] stage=graph.request userId=${safeUserId}` +
-        ` messageId=${maskedMessageId} networkError=${err?.message?.slice(0, 200)}`,
-    );
-
-    return res.status(200).json({
-      success: false,
-      failedAt: "graph.request",
-      connectionFound: true,
-      token: { expired: false, available: true },
-      tokenClaims,
-      permissionAnalysis,
-      me: meResult,
-      graph: {
-        status: null,
-        success: false,
-        code: "NETWORK_ERROR",
-        message: err?.message?.slice(0, 200) ?? "Erro de rede ao contactar o Microsoft Graph.",
-        requestId: null,
-      },
-    });
-  }
-
-  // Token não é mais necessário — descarta imediatamente
+  // Token não é mais necessário — descarta imediatamente após todos os requests
   accessToken = null;
 
-  // ── Estágio 5: Processar resposta do Graph ──────────────────────────────────
-  // Lê o body UMA única vez para evitar problemas de stream consumido
-  const graphBody = await safeReadJson(graphResponse);
-  const { code: graphCode, message: graphMessage, requestId } =
-    extractGraphError(graphBody, graphResponse);
+  // ── Estágio 5: Processar resultados ─────────────────────────────────────────
 
-  console.log(
-    `[MICROSOFT_DIAG] stage=graph.response userId=${safeUserId}` +
-      ` messageId=${maskedMessageId}` +
-      ` status=${graphResponse.status}` +
-      ` code=${graphCode ?? "none"}` +
-      ` requestId=${requestId ?? "none"}`,
-  );
+  // Probe A: /users/{mailbox}
+  const mailboxProbe =
+    mailboxUserResult.status === "fulfilled"
+      ? mailboxUserResult.value
+      : { status: null, success: false, code: "PROMISE_REJECTED", message: String(mailboxUserResult.reason).slice(0, 200), requestId: null };
 
-  if (graphResponse.status === 200) {
-    const safeMessage = extractSafeMessageFields(graphBody);
+  // Probe B: /users/{mailbox}/mailFolders/inbox
+  const inboxProbe =
+    inboxResult.status === "fulfilled"
+      ? inboxResult.value
+      : { status: null, success: false, code: "PROMISE_REJECTED", message: String(inboxResult.reason).slice(0, 200), requestId: null };
 
-    return res.status(200).json({
-      success: true,
-      connectionFound: true,
-      token: { expired: false, available: true },
-      tokenClaims,
-      permissionAnalysis,
-      me: meResult,
-      graph: {
+  // Probe C: /users/{mailbox}/messages/{id}
+  let messageProbe;
+  if (rawMessageResponse.status === "rejected") {
+    // Erro de rede
+    messageProbe = {
+      status: null,
+      success: false,
+      code: "NETWORK_ERROR",
+      message: String(rawMessageResponse.reason?.message ?? "Erro de rede.").slice(0, 200),
+      requestId: null,
+    };
+  } else {
+    const graphResponse = rawMessageResponse.value;
+    const graphBody = await safeReadJson(graphResponse);
+    const { code: graphCode, message: graphMessage, requestId } =
+      extractGraphError(graphBody, graphResponse);
+
+    if (graphResponse.status === 200) {
+      messageProbe = {
         status: 200,
         success: true,
         requestId: requestId ?? null,
-        message: safeMessage,
-      },
-    });
+        message: extractSafeMessageFields(graphBody),
+      };
+    } else {
+      messageProbe = {
+        status: graphResponse.status,
+        success: false,
+        code: graphCode ?? null,
+        message: graphMessage ?? null,
+        requestId: requestId ?? null,
+      };
+    }
   }
 
-  // Qualquer status !== 200 é tratado como falha do Graph
+  console.log(
+    `[MICROSOFT_DIAG] stage=sharedMailbox.results` +
+      ` mailbox=${mailboxProbe.status ?? "null"}_${mailboxProbe.success}` +
+      ` inbox=${inboxProbe.status ?? "null"}_${inboxProbe.success}` +
+      ` message=${messageProbe.status ?? "null"}_${messageProbe.success}`,
+  );
+
+  const sharedMailboxAccess = {
+    mailbox: mailboxProbe,
+    inbox: inboxProbe,
+    message: messageProbe,
+  };
+
+  const overallSuccess = messageProbe.success;
+
   return res.status(200).json({
-    success: false,
-    failedAt: "graph.request",
+    success: overallSuccess,
+    ...(overallSuccess ? {} : { failedAt: "graph.request" }),
     connectionFound: true,
     token: { expired: false, available: true },
     tokenClaims,
     permissionAnalysis,
     me: meResult,
-    graph: {
-      status: graphResponse.status,
-      success: false,
-      code: graphCode,
-      message: graphMessage,
-      requestId: requestId ?? null,
-    },
+    sharedMailboxAccess,
+    // Mantém o campo `graph` apontando para o resultado da mensagem
+    // para compatibilidade com o formato de resposta anterior.
+    graph: messageProbe,
   });
 }
