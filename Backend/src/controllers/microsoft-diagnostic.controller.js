@@ -5,13 +5,15 @@
  *   1. Encontrar a conexão Microsoft do usuário no Supabase.
  *   2. Descriptografar o token usando MICROSOFT_TOKEN_ENCRYPTION_KEY existente.
  *   3. Obter access token válido via getValidMicrosoftAccessToken.
- *   4. Consultar uma mensagem na caixa compartilhada via Microsoft Graph.
+ *   4. Inspecionar claims do JWT em memória sem expor o token.
+ *   5. Consultar /me (se token delegado) e a mensagem na caixa compartilhada.
  *
  * Segurança:
  *   - NUNCA retorna tokens, secrets, refresh_token ou credenciais.
  *   - NUNCA loga tokens ou secrets nos logs da Vercel.
  *   - messageId é mascarado nos logs (apenas primeiros/últimos caracteres).
  *   - Protegido por header x-diagnostic-secret (ver diagnostic-auth.middleware.js).
+ *   - JWT é decodificado APENAS em memória; o payload bruto é descartado.
  *
  * ⚠️  REMOVER após conclusão do diagnóstico.
  */
@@ -19,6 +21,25 @@
 import { getValidMicrosoftAccessToken } from "../services/microsoft-oauth.service.js";
 
 const SHARED_MAILBOX = "suporte@centaurotelecom.com.br";
+
+// Claims de audience que identificam o Microsoft Graph
+const GRAPH_AUDIENCES = [
+  "https://graph.microsoft.com",
+  "https://graph.microsoft.com/",
+  "00000003-0000-0000-c000-000000000000", // Graph app ID (app-only)
+];
+
+// Permissões de aplicativo reconhecidas
+const APPLICATION_MAIL_ROLES = new Set([
+  "Mail.Read",
+  "Mail.ReadBasic",
+  "Mail.ReadWrite",
+  "Mail.Send",
+  "Mail.ReadWrite.All",
+  "Mail.Read.All",
+]);
+
+// ── Helpers ────────────────────────────────────────────────────────────────────
 
 /**
  * Mascara o messageId para logs: exibe os 8 primeiros e os 8 últimos caracteres.
@@ -91,6 +112,225 @@ function extractSafeMessageFields(body) {
   };
 }
 
+// ── JWT claim inspection ───────────────────────────────────────────────────────
+
+/**
+ * Decodifica APENAS o payload de um JWT em memória para inspeção diagnóstica.
+ * Não valida assinatura — o token já foi obtido pelo serviço OAuth existente.
+ * O token bruto nunca sai dessa função; apenas as claims selecionadas são retornadas.
+ *
+ * @param {string} token  Access token obtido pelo serviço OAuth.
+ * @returns {{ claims: object|null, error: string|null }}
+ */
+export function decodeJwtPayloadSafely(token) {
+  try {
+    if (typeof token !== "string") return { claims: null, error: "token_not_string" };
+    const parts = token.split(".");
+    if (parts.length < 2) return { claims: null, error: "not_jwt_format" };
+
+    // Decodifica o payload (índice 1) sem validar assinatura
+    const payloadB64 = parts[1];
+    // Buffer.from aceita base64url a partir do Node.js 14+
+    const payloadJson = Buffer.from(payloadB64, "base64url").toString("utf8");
+    const claims = JSON.parse(payloadJson);
+
+    if (typeof claims !== "object" || claims === null) {
+      return { claims: null, error: "payload_not_object" };
+    }
+    return { claims, error: null };
+  } catch {
+    return { claims: null, error: "decode_failed" };
+  }
+}
+
+/**
+ * Extrai somente as claims não-secretas relevantes e constrói o bloco tokenClaims.
+ * NUNCA inclui o payload bruto completo na resposta.
+ *
+ * @param {object} claims  Objeto de claims decodificado do JWT.
+ * @returns {object}  tokenClaims seguro para retornar ao diagnóstico.
+ */
+export function buildTokenClaims(claims) {
+  if (!claims || typeof claims !== "object") {
+    return { tokenType: "unknown", hasScopes: false, hasRoles: false };
+  }
+
+  const rawScp = claims.scp;
+  const rawRoles = claims.roles;
+
+  const hasScopes = typeof rawScp === "string" && rawScp.trim().length > 0;
+  const hasRoles = Array.isArray(rawRoles) && rawRoles.length > 0;
+
+  // Determinar tipo de token
+  let tokenType;
+  if (hasScopes && !hasRoles) tokenType = "delegated";
+  else if (hasRoles && !hasScopes) tokenType = "application";
+  else if (hasScopes && hasRoles) tokenType = "delegated_with_roles";
+  else tokenType = "unknown";
+
+  // Scopes: string separada por espaço → array sanitizado
+  const scopes = hasScopes
+    ? rawScp.split(" ").map((s) => s.trim()).filter(Boolean)
+    : [];
+
+  // Roles: já é array; filtra apenas strings
+  const roles = hasRoles
+    ? rawRoles.filter((r) => typeof r === "string").map((r) => r.trim())
+    : [];
+
+  // Audience
+  const aud =
+    typeof claims.aud === "string"
+      ? claims.aud.slice(0, 200)
+      : Array.isArray(claims.aud)
+        ? claims.aud.filter((a) => typeof a === "string").join(",").slice(0, 200)
+        : null;
+
+  const result = {
+    tokenType,
+    aud: aud ?? null,
+    tenantId: typeof claims.tid === "string" ? claims.tid : null,
+    appId:
+      typeof claims.appid === "string"
+        ? claims.appid
+        : typeof claims.azp === "string"
+          ? claims.azp
+          : null,
+    scopes,
+    roles,
+  };
+
+  // Dados de identidade do usuário (apenas se delegado)
+  if (tokenType === "delegated" || tokenType === "delegated_with_roles") {
+    result.user = {
+      oid: typeof claims.oid === "string" ? claims.oid : null,
+      upn: typeof claims.upn === "string" ? claims.upn : null,
+      preferredUsername:
+        typeof claims.preferred_username === "string"
+          ? claims.preferred_username
+          : null,
+    };
+  }
+
+  return result;
+}
+
+/**
+ * Analisa as permissões presentes no token e verifica o audience.
+ *
+ * @param {object} tokenClaims  Resultado de buildTokenClaims.
+ * @returns {object}  permissionAnalysis seguro para retornar ao diagnóstico.
+ */
+export function buildPermissionAnalysis(tokenClaims) {
+  const { tokenType, aud, scopes, roles } = tokenClaims;
+
+  // Verificar se audience parece ser o Microsoft Graph
+  const audienceLooksLikeGraph =
+    typeof aud === "string" &&
+    GRAPH_AUDIENCES.some((g) => aud.includes(g));
+
+  const analysis = {
+    tokenType,
+    audienceLooksLikeGraph,
+  };
+
+  if (tokenType === "delegated" || tokenType === "delegated_with_roles") {
+    const scopeSet = new Set(scopes);
+    analysis.hasMailRead = scopeSet.has("Mail.Read");
+    analysis.hasMailReadBasic = scopeSet.has("Mail.ReadBasic");
+    analysis.hasMailReadWrite = scopeSet.has("Mail.ReadWrite");
+    analysis.hasMailSend = scopeSet.has("Mail.Send");
+    analysis.hasApplicationMailPermissions = false;
+  }
+
+  if (tokenType === "application" || tokenType === "delegated_with_roles") {
+    const roleSet = new Set(roles);
+    const hasAnyAppMailRole = [...APPLICATION_MAIL_ROLES].some((r) => roleSet.has(r));
+    analysis.hasApplicationMailPermissions = hasAnyAppMailRole;
+    if (tokenType === "application") {
+      analysis.hasMailRead =
+        roleSet.has("Mail.Read") || roleSet.has("Mail.Read.All");
+      analysis.hasMailReadBasic = roleSet.has("Mail.ReadBasic");
+      analysis.hasMailReadWrite =
+        roleSet.has("Mail.ReadWrite") || roleSet.has("Mail.ReadWrite.All");
+      analysis.hasMailSend = roleSet.has("Mail.Send");
+    }
+  }
+
+  return analysis;
+}
+
+// ── /me query ─────────────────────────────────────────────────────────────────
+
+/**
+ * Consulta GET /me no Microsoft Graph e retorna apenas campos seguros.
+ * Só deve ser chamado para tokens delegados.
+ *
+ * @param {string} accessToken  Token de acesso (usado e descartado internamente).
+ * @returns {object}  Resultado seguro da consulta /me.
+ */
+export async function queryGraphMe(accessToken, { fetchImpl = globalThis.fetch } = {}) {
+  const meUrl =
+    "https://graph.microsoft.com/v1.0/me?$select=id,displayName,userPrincipalName,mail";
+
+  let meResponse;
+  try {
+    meResponse = await fetchImpl(meUrl, {
+      method: "GET",
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        Accept: "application/json",
+      },
+      signal: AbortSignal.timeout(10_000),
+    });
+  } catch (err) {
+    return {
+      attempted: true,
+      success: false,
+      status: null,
+      code: "NETWORK_ERROR",
+      message: err?.message?.slice(0, 200) ?? "Erro de rede.",
+      requestId: null,
+    };
+  }
+
+  const meBody = await safeReadJson(meResponse);
+  const { code, message, requestId } = extractGraphError(meBody, meResponse);
+
+  if (meResponse.status === 200) {
+    return {
+      attempted: true,
+      success: true,
+      status: 200,
+      requestId: requestId ?? null,
+      user: {
+        id: typeof meBody.id === "string" ? meBody.id : null,
+        displayName:
+          typeof meBody.displayName === "string"
+            ? meBody.displayName.slice(0, 200)
+            : null,
+        userPrincipalName:
+          typeof meBody.userPrincipalName === "string"
+            ? meBody.userPrincipalName.slice(0, 200)
+            : null,
+        mail:
+          typeof meBody.mail === "string" ? meBody.mail.slice(0, 200) : null,
+      },
+    };
+  }
+
+  return {
+    attempted: true,
+    success: false,
+    status: meResponse.status,
+    code: code ?? null,
+    message: message ?? null,
+    requestId: requestId ?? null,
+  };
+}
+
+// ── Controller principal ───────────────────────────────────────────────────────
+
 /**
  * GET /api/diagnostics/microsoft/shared-mailbox-message
  *
@@ -161,7 +401,52 @@ export async function diagSharedMailboxMessage(req, res) {
     });
   }
 
-  // ── Estágio 2: Consultar Microsoft Graph ────────────────────────────────────
+  // ── Estágio 2: Inspecionar claims do JWT em memória ─────────────────────────
+  console.log(`[MICROSOFT_DIAG] stage=token.claims`);
+
+  const { claims, error: decodeError } = decodeJwtPayloadSafely(accessToken);
+
+  let tokenClaims;
+  let permissionAnalysis;
+
+  if (claims) {
+    tokenClaims = buildTokenClaims(claims);
+    permissionAnalysis = buildPermissionAnalysis(tokenClaims);
+
+    // Logs seguros — NUNCA inclui token, access_token, Bearer, refresh_token, clientSecret
+    console.log(`[MICROSOFT_DIAG] tokenType=${tokenClaims.tokenType}`);
+    console.log(`[MICROSOFT_DIAG] hasScopes=${tokenClaims.scopes.length > 0}`);
+    console.log(`[MICROSOFT_DIAG] hasRoles=${tokenClaims.roles.length > 0}`);
+    console.log(
+      `[MICROSOFT_DIAG] graphAudience=${permissionAnalysis.audienceLooksLikeGraph}`,
+    );
+  } else {
+    // Token opaco ou formato inesperado — raro para Microsoft Graph mas possível
+    console.log(`[MICROSOFT_DIAG] tokenClaims=undecodable reason=${decodeError}`);
+    tokenClaims = { tokenType: "unknown", hasScopes: false, hasRoles: false, decodeError };
+    permissionAnalysis = { tokenType: "unknown", audienceLooksLikeGraph: null };
+  }
+
+  // ── Estágio 3: Consultar /me (somente para tokens delegados) ────────────────
+  let meResult = null;
+  const isDelegated =
+    tokenClaims.tokenType === "delegated" ||
+    tokenClaims.tokenType === "delegated_with_roles";
+
+  if (isDelegated) {
+    console.log(`[MICROSOFT_DIAG] stage=me.request`);
+    meResult = await queryGraphMe(accessToken);
+    console.log(
+      `[MICROSOFT_DIAG] stage=me.response status=${meResult.status ?? "null"}` +
+        ` success=${meResult.success}`,
+    );
+  } else {
+    console.log(
+      `[MICROSOFT_DIAG] stage=me.skipped reason=tokenType=${tokenClaims.tokenType}`,
+    );
+  }
+
+  // ── Estágio 4: Consultar Microsoft Graph (shared mailbox) ───────────────────
   const graphUrl =
     `https://graph.microsoft.com/v1.0/users/${encodeURIComponent(SHARED_MAILBOX)}` +
     `/messages/${encodeURIComponent(safeMessageId)}` +
@@ -196,6 +481,9 @@ export async function diagSharedMailboxMessage(req, res) {
       failedAt: "graph.request",
       connectionFound: true,
       token: { expired: false, available: true },
+      tokenClaims,
+      permissionAnalysis,
+      me: meResult,
       graph: {
         status: null,
         success: false,
@@ -209,7 +497,7 @@ export async function diagSharedMailboxMessage(req, res) {
   // Token não é mais necessário — descarta imediatamente
   accessToken = null;
 
-  // ── Estágio 3: Processar resposta do Graph ──────────────────────────────────
+  // ── Estágio 5: Processar resposta do Graph ──────────────────────────────────
   // Lê o body UMA única vez para evitar problemas de stream consumido
   const graphBody = await safeReadJson(graphResponse);
   const { code: graphCode, message: graphMessage, requestId } =
@@ -230,6 +518,9 @@ export async function diagSharedMailboxMessage(req, res) {
       success: true,
       connectionFound: true,
       token: { expired: false, available: true },
+      tokenClaims,
+      permissionAnalysis,
+      me: meResult,
       graph: {
         status: 200,
         success: true,
@@ -245,6 +536,9 @@ export async function diagSharedMailboxMessage(req, res) {
     failedAt: "graph.request",
     connectionFound: true,
     token: { expired: false, available: true },
+    tokenClaims,
+    permissionAnalysis,
+    me: meResult,
     graph: {
       status: graphResponse.status,
       success: false,
