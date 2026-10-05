@@ -8,6 +8,8 @@ import microsoftIntegrationRoutes from "./routes/microsoft-integration.routes.js
 import signatureRoutes from "./routes/signature.routes.js";
 import ticketRoutes from "./routes/ticket.routes.js";
 import webhookRoutes from "./routes/webhook.routes.js";
+// [TEMPORÁRIO] Rota de diagnóstico Microsoft Graph — remover após análise
+import diagnosticsRoutes from "./routes/diagnostics.routes.js";
 
 const app = express();
 
@@ -54,6 +56,7 @@ app.use(
       "Content-Type",
       "Authorization",
       "x-webhook-secret",
+      "x-diagnostic-secret",
       "x-requested-with",
     ],
   }),
@@ -94,6 +97,8 @@ app.use("/api/integrations/microsoft", microsoftIntegrationRoutes);
 app.use("/api/profile", signatureRoutes);
 app.use("/api/tickets", ticketRoutes);
 app.use("/api/webhooks", webhookRoutes);
+// [TEMPORÁRIO] Diagnóstico Microsoft Graph — remover após análise
+app.use("/api/diagnostics", diagnosticsRoutes);
 
 // 404 para rotas não encontradas
 app.use((_req, res) => {
