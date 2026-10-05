@@ -96,7 +96,7 @@ test("anexo acima de 150 MiB e extensões perigosas são bloqueados", () => {
 function assertSmallAttachmentGraphRequest(request, { draftId, name, contentType, bytes }) {
   assert.equal(
     request.url,
-    `https://graph.microsoft.com/v1.0/me/messages/${encodeURIComponent(draftId)}/attachments`,
+    `https://graph.microsoft.com/v1.0/users/suporte@centaurotelecom.com.br/messages/${encodeURIComponent(draftId)}/attachments`,
   );
   assert.equal(request.options.method, "POST");
   assert.equal(new Headers(request.options.headers).get("Content-Type"), "application/json");

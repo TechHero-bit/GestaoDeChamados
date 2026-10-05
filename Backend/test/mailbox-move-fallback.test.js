@@ -508,7 +508,7 @@ test("Cenário 9 — Resposta direta sem assinatura usa endpoint /reply e regist
   );
 
   const replyCall = calls.find((c) => c.url.includes("/reply"));
-  assert.ok(replyCall, "deve ter chamado POST /me/messages/{id}/reply");
+  assert.ok(replyCall, "deve ter chamado POST /users/{shared-mailbox}/messages/{id}/reply");
   assert.ok(!calls.some((c) => c.url.includes("sendMail")), "sendMail não pode ser chamado");
   assert.ok(logs.includes("operation=threaded_reply_success"), "deve registrar threaded_reply_success");
 });

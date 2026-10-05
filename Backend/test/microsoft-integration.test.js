@@ -384,7 +384,7 @@ test("reply do Graph usa o último message ID, faz URL encoding e não altera o 
 
   assert.equal(
     captured.url,
-    "https://graph.microsoft.com/v1.0/me/messages/message%2Fid%3Fpart%3D1/reply",
+    "https://graph.microsoft.com/v1.0/users/suporte@centaurotelecom.com.br/messages/message%2Fid%3Fpart%3D1/reply",
   );
   assert.equal(captured.options.headers.Authorization, "Bearer reply-access-token");
   assert.deepEqual(JSON.parse(captured.options.body), {

@@ -254,7 +254,7 @@ function mailboxMoveDelay(attemptIndex) {
 }
 
 /**
- * Executa POST /me/messages/{messageId}/createReply com até 3 retries
+ * Executa POST /users/{shared-mailbox}/messages/{messageId}/createReply com até 3 retries
  * exclusivamente quando o Graph retornar 503 ErrorMailboxMoveInProgress.
  *
  * Retorna response com status 201 em caso de sucesso.
@@ -270,7 +270,7 @@ async function createReplyWithMailboxMoveRetry(
   htmlMeta,
 ) {
   const url =
-    "https://graph.microsoft.com/v1.0/me/messages/" +
+    "https://graph.microsoft.com/v1.0/users/suporte@centaurotelecom.com.br/messages/" +
     encodeURIComponent(messageId) +
     "/createReply";
   const requestOptions = {
@@ -506,7 +506,7 @@ async function executeInlineSignatureDraft(
       typeof html === "string" && html.includes(`src="cid:${SIGNATURE_CONTENT_ID}"`),
   };
 
-  const messageUrl = "https://graph.microsoft.com/v1.0/me/messages/";
+  const messageUrl = "https://graph.microsoft.com/v1.0/users/suporte@centaurotelecom.com.br/messages/";
 
   // createReply com retry para 503 ErrorMailboxMoveInProgress.
   // O retry acontece APENAS aqui, antes de qualquer draft existir,
@@ -784,7 +784,7 @@ export async function replyToMicrosoftMessage(
   let response;
   try {
     response = await fetchImpl(
-      `https://graph.microsoft.com/v1.0/me/messages/${encodeURIComponent(messageId)}/reply`,
+      `https://graph.microsoft.com/v1.0/users/suporte@centaurotelecom.com.br/messages/${encodeURIComponent(messageId)}/reply`,
       {
         method: "POST",
         headers: {
@@ -861,7 +861,7 @@ export async function replyToMicrosoftMessage(
   });
 }
 
-const GRAPH_MESSAGES_URL = "https://graph.microsoft.com/v1.0/me/messages/";
+const GRAPH_MESSAGES_URL = "https://graph.microsoft.com/v1.0/users/suporte@centaurotelecom.com.br/messages/";
 
 function safeGraphErrorCode(externalCode) {
   return typeof externalCode === "string" && /^[A-Za-z0-9_.-]{1,100}$/.test(externalCode)
