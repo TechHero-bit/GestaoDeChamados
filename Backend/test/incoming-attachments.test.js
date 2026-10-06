@@ -6,6 +6,7 @@ import {
   getIncomingAttachmentForTicket,
   INCOMING_ATTACHMENT_MAX_BYTES,
   incomingAttachmentStoragePath,
+  isAttachmentSizeConsistent,
   prepareIncomingAttachments,
   sanitizeStorageFileName,
 } from "../src/services/incoming-attachment.service.js";
@@ -203,7 +204,7 @@ test("falha de confirmação marca o anexo como Falhou sem fingir disponibilidad
   assert.equal(database.attachments[0].processing_error, "OBJECT_NOT_FOUND");
 });
 
-test("PDF com divergência de tamanho entre Graph e Storage é marcado como Falhou", async () => {
+test("PDF com upload truncado significativamente no Storage é marcado como Falhou", async () => {
   const database = new AttachmentDatabase();
   const [prepared] = await prepareIncomingAttachments(
     {
@@ -224,8 +225,8 @@ test("PDF com divergência de tamanho entre Graph e Storage é marcado como Falh
   assert.equal(prepared.processing_status, "Pendente");
   const row = database.attachments[0];
 
-  // Storage contém os bytes reais de contentBytes enviados pelo Power Automate
-  database.objects.set(row.storage_path, { size: 97261, mimetype: "application/pdf" });
+  // Storage contém apenas 500 bytes de um arquivo de ~97 KB (upload interrompido / truncado)
+  database.objects.set(row.storage_path, { size: 500, mimetype: "application/pdf" });
 
   await assert.rejects(
     completeIncomingAttachment(
@@ -239,7 +240,7 @@ test("PDF com divergência de tamanho entre Graph e Storage é marcado como Falh
   assert.equal(database.attachments[0].processing_error, "SIZE_MISMATCH");
 });
 
-test("PNG inline com divergência de tamanho entre Graph e Storage é marcado como Falhou", async () => {
+test("PNG inline com tamanho no Storage maior que o declarado é marcado como Falhou", async () => {
   const database = new AttachmentDatabase();
   await prepareIncomingAttachments(
     {
@@ -260,7 +261,8 @@ test("PNG inline com divergência de tamanho entre Graph e Storage é marcado co
   );
 
   const row = database.attachments[0];
-  database.objects.set(row.storage_path, { size: 142344, mimetype: "image/png" });
+  // Storage contém mais bytes do que o declarado pelo Graph (inconsistência)
+  database.objects.set(row.storage_path, { size: 143000, mimetype: "image/png" });
 
   await assert.rejects(
     completeIncomingAttachment(
@@ -272,6 +274,264 @@ test("PNG inline com divergência de tamanho entre Graph e Storage é marcado co
 
   assert.equal(database.attachments[0].processing_status, "Falhou");
   assert.equal(database.attachments[0].processing_error, "SIZE_MISMATCH");
+});
+
+test("caso Cartesia.txt: declaredSize 211 e objectSize 29 conclui com sucesso e atualiza file_size no banco", async () => {
+  const database = new AttachmentDatabase();
+  const [prepared] = await prepareIncomingAttachments(
+    {
+      ticket,
+      message,
+      attachments: [
+        attachment({
+          attachment_id: "cartesia-att-1",
+          file_name: "Cartesia.txt",
+          content_type: "text/plain",
+          file_size: 211, // Retornado pelo Graph / Power Automate com overhead MIME
+          is_inline: false,
+        }),
+      ],
+    },
+    { supabase: database },
+  );
+
+  assert.equal(prepared.processing_status, "Pendente");
+  const row = database.attachments[0];
+  assert.equal(row.file_size, 211);
+
+  // Storage contém os 29 bytes reais decodificados
+  database.objects.set(row.storage_path, { size: 29, mimetype: "text/plain" });
+
+  const completed = await completeIncomingAttachment(
+    { messageId: "outlook-message-1", attachmentId: "cartesia-att-1" },
+    { supabase: database },
+  );
+
+  assert.equal(completed.processing_status, "Disponivel");
+  assert.equal(completed.file_size, 29);
+  assert.equal(database.attachments[0].processing_status, "Disponivel");
+  assert.equal(database.attachments[0].file_size, 29);
+  assert.equal(database.attachments[0].processing_error, null);
+});
+
+test("igualdade exata: declaredSize 29 e objectSize 29 conclui com sucesso", async () => {
+  const database = new AttachmentDatabase();
+  await prepareIncomingAttachments(
+    {
+      ticket,
+      message,
+      attachments: [
+        attachment({
+          attachment_id: "exact-att-1",
+          file_name: "Cartesia.txt",
+          content_type: "text/plain",
+          file_size: 29,
+        }),
+      ],
+    },
+    { supabase: database },
+  );
+
+  const row = database.attachments[0];
+  database.objects.set(row.storage_path, { size: 29, mimetype: "text/plain" });
+
+  const completed = await completeIncomingAttachment(
+    { messageId: "outlook-message-1", attachmentId: "exact-att-1" },
+    { supabase: database },
+  );
+
+  assert.equal(completed.processing_status, "Disponivel");
+  assert.equal(completed.file_size, 29);
+  assert.equal(database.attachments[0].file_size, 29);
+});
+
+test("rejeição quando objectSize excede declaredSize: declaredSize 29 e objectSize 30", async () => {
+  const database = new AttachmentDatabase();
+  await prepareIncomingAttachments(
+    {
+      ticket,
+      message,
+      attachments: [
+        attachment({
+          attachment_id: "exceeded-att-1",
+          file_name: "Cartesia.txt",
+          content_type: "text/plain",
+          file_size: 29,
+        }),
+      ],
+    },
+    { supabase: database },
+  );
+
+  const row = database.attachments[0];
+  database.objects.set(row.storage_path, { size: 30, mimetype: "text/plain" });
+
+  await assert.rejects(
+    completeIncomingAttachment(
+      { messageId: "outlook-message-1", attachmentId: "exceeded-att-1" },
+      { supabase: database },
+    ),
+    (error) => {
+      assert.equal(error.statusCode, 409);
+      assert.match(error.message, /O tamanho do arquivo enviado não corresponde ao anexo recebido/);
+      return true;
+    },
+  );
+
+  assert.equal(database.attachments[0].processing_status, "Falhou");
+  assert.equal(database.attachments[0].processing_error, "SIZE_MISMATCH");
+});
+
+test("schema de entrada rejeita declaredSize acima do limite máximo de 5 GiB", () => {
+  assert.throws(
+    () => {
+      webhookPayloadSchema.parse({
+        message_id: "outlook-message-1",
+        conversation_id: "conversation-1",
+        remetente_email: "cliente@example.com",
+        assunto: "Chamado (chamado)",
+        corpo_mensagem: "Mensagem com anexo gigante",
+        data_recebimento: "2026-09-14T12:00:00.000Z",
+        attachments: [
+          attachment({
+            file_size: INCOMING_ATTACHMENT_MAX_BYTES + 1,
+          }),
+        ],
+      });
+    },
+    (error) => {
+      assert.match(error.message, /file_size excede o limite suportado/);
+      return true;
+    },
+  );
+});
+
+test("arquivo de 100 KB declarado com apenas 10 KB no Storage é rejeitado como Falhou", async () => {
+  const database = new AttachmentDatabase();
+  await prepareIncomingAttachments(
+    {
+      ticket,
+      message,
+      attachments: [
+        attachment({
+          attachment_id: "trunc-100kb",
+          file_name: "manual.pdf",
+          content_type: "application/pdf",
+          file_size: 100 * 1024, // 100 KB declarado
+        }),
+      ],
+    },
+    { supabase: database },
+  );
+
+  const row = database.attachments[0];
+  // Storage recebeu apenas 10 KB (upload severamente truncado)
+  database.objects.set(row.storage_path, { size: 10 * 1024, mimetype: "application/pdf" });
+
+  await assert.rejects(
+    completeIncomingAttachment(
+      { messageId: "outlook-message-1", attachmentId: "trunc-100kb" },
+      { supabase: database },
+    ),
+    { statusCode: 409 },
+  );
+
+  assert.equal(database.attachments[0].processing_status, "Falhou");
+  assert.equal(database.attachments[0].processing_error, "SIZE_MISMATCH");
+});
+
+test("arquivo de 1 MB declarado com apenas 500 KB no Storage é rejeitado como Falhou", async () => {
+  const database = new AttachmentDatabase();
+  await prepareIncomingAttachments(
+    {
+      ticket,
+      message,
+      attachments: [
+        attachment({
+          attachment_id: "trunc-1mb",
+          file_name: "video-curto.mp4",
+          content_type: "video/mp4",
+          file_size: 1024 * 1024, // 1 MB declarado
+        }),
+      ],
+    },
+    { supabase: database },
+  );
+
+  const row = database.attachments[0];
+  // Storage recebeu apenas 500 KB (upload cortado pela metade)
+  database.objects.set(row.storage_path, { size: 500 * 1024, mimetype: "video/mp4" });
+
+  await assert.rejects(
+    completeIncomingAttachment(
+      { messageId: "outlook-message-1", attachmentId: "trunc-1mb" },
+      { supabase: database },
+    ),
+    { statusCode: 409 },
+  );
+
+  assert.equal(database.attachments[0].processing_status, "Falhou");
+  assert.equal(database.attachments[0].processing_error, "SIZE_MISMATCH");
+});
+
+test("arquivo de 100 KB com overhead legítimo de 236 bytes conclui com sucesso", async () => {
+  const database = new AttachmentDatabase();
+  await prepareIncomingAttachments(
+    {
+      ticket,
+      message,
+      attachments: [
+        attachment({
+          attachment_id: "overhead-100kb",
+          file_name: "relatorio.pdf",
+          content_type: "application/pdf",
+          file_size: 100 * 1024 + 236, // 100 KB + 236 bytes de overhead MAPI
+        }),
+      ],
+    },
+    { supabase: database },
+  );
+
+  const row = database.attachments[0];
+  // Storage contém os 100 KB exatos
+  database.objects.set(row.storage_path, { size: 100 * 1024, mimetype: "application/pdf" });
+
+  const completed = await completeIncomingAttachment(
+    { messageId: "outlook-message-1", attachmentId: "overhead-100kb" },
+    { supabase: database },
+  );
+
+  assert.equal(completed.processing_status, "Disponivel");
+  assert.equal(completed.file_size, 100 * 1024);
+  assert.equal(database.attachments[0].file_size, 100 * 1024);
+});
+
+test("função isAttachmentSizeConsistent valida integridade de tamanhos", () => {
+  // 1. Arquivo de 29 bytes / declarado 211 bytes → deve aceitar (overhead de 182 bytes)
+  assert.equal(isAttachmentSizeConsistent(29, 211), true);
+
+  // 2. Arquivo de 100 KB / declarado 100 KB → deve aceitar (igualdade exata)
+  assert.equal(isAttachmentSizeConsistent(100 * 1024, 100 * 1024), true);
+
+  // 3. Arquivo de 100 KB / declarado 100 KB + overhead legítimo de 236 bytes → deve aceitar
+  assert.equal(isAttachmentSizeConsistent(100 * 1024, 100 * 1024 + 236), true);
+
+  // 4. Arquivo de 100 KB / Storage com apenas 10 KB → deve rejeitar
+  assert.equal(isAttachmentSizeConsistent(10 * 1024, 100 * 1024), false);
+
+  // 5. Arquivo de 1 MB / Storage com apenas 500 KB → deve rejeitar
+  assert.equal(isAttachmentSizeConsistent(500 * 1024, 1024 * 1024), false);
+
+  // 6. objectSize > declaredSize → deve rejeitar
+  assert.equal(isAttachmentSizeConsistent(30, 29), false);
+  assert.equal(isAttachmentSizeConsistent(100 * 1024 + 1, 100 * 1024), false);
+
+  // Casos de borda: inválido, zero ou negativo
+  assert.equal(isAttachmentSizeConsistent(0, 29), false);
+  assert.equal(isAttachmentSizeConsistent(-10, 29), false);
+  assert.equal(isAttachmentSizeConsistent(29, 0), false);
+  assert.equal(isAttachmentSizeConsistent(NaN, 29), false);
+  assert.equal(isAttachmentSizeConsistent(29, NaN), false);
 });
 
 test("Caso 2 — objeto inexistente no Storage marca anexo como Falhou com HTTP 409", async () => {

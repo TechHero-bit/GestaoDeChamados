@@ -341,6 +341,34 @@ async function markFailed(supabase, row, code) {
   });
 }
 
+export const MAX_TRANSPORT_HEADER_OVERHEAD_BYTES = 512;
+
+/**
+ * Valida a integridade do tamanho binário armazenado em relação ao tamanho
+ * declarado pelo Microsoft Graph / Power Automate.
+ *
+ * No Microsoft Graph / Exchange, a propriedade size do anexo reflete o tamanho
+ * de transporte (PR_ATTACH_SIZE), que inclui uma sobrecarga fixa de metadados
+ * MAPI e cabeçalhos MIME (tipicamente entre 150 e 300 bytes).
+ *
+ * Regras de integridade:
+ * 1. objectSize e declaredSize devem ser inteiros estritamente positivos;
+ * 2. objectSize não pode ser maior que declaredSize;
+ * 3. objectSize === declaredSize é aceito diretamente;
+ * 4. A diferença (declaredSize - objectSize) deve estar dentro do overhead
+ *    legítimo de transporte (até 512 bytes). Uploads truncados além dessa
+ *    margem são estritamente rejeitados.
+ */
+export function isAttachmentSizeConsistent(objectSize, declaredSize) {
+  if (!Number.isSafeInteger(objectSize) || objectSize <= 0) return false;
+  if (!Number.isSafeInteger(declaredSize) || declaredSize <= 0) return false;
+  if (objectSize > declaredSize) return false;
+  if (objectSize === declaredSize) return true;
+
+  const difference = declaredSize - objectSize;
+  return difference <= MAX_TRANSPORT_HEADER_OVERHEAD_BYTES;
+}
+
 export async function completeIncomingAttachment(
   { messageId, attachmentId },
   { supabase = getSupabase() } = {},
@@ -361,6 +389,7 @@ export async function completeIncomingAttachment(
   }
 
   const objectSize = Number(object?.metadata?.size);
+  const declaredSize = Number(row.file_size);
 
   if (!Number.isSafeInteger(objectSize) || objectSize <= 0) {
     await markFailed(supabase, row, "INVALID_SIZE");
@@ -372,7 +401,7 @@ export async function completeIncomingAttachment(
     throw unavailableAttachmentError("O tamanho do arquivo enviado excede o limite suportado.");
   }
 
-  if (objectSize !== Number(row.file_size)) {
+  if (!isAttachmentSizeConsistent(objectSize, declaredSize)) {
     await markFailed(supabase, row, "SIZE_MISMATCH");
     throw unavailableAttachmentError(
       "O tamanho do arquivo enviado não corresponde ao anexo recebido.",
@@ -384,6 +413,7 @@ export async function completeIncomingAttachment(
     processing_status: AVAILABLE_STATUS,
     processing_error: null,
     available_at: new Date().toISOString(),
+    file_size: objectSize,
     content_type:
       actualContentType === "application/octet-stream"
         ? row.content_type
