@@ -439,3 +439,9 @@ test("serviço de e-mail não chama Power Automate sem message_id", async () => 
     else delete process.env.POWER_AUTOMATE_REPLY_URL;
   }
 });
+
+
+test("lista de responsáveis exige autenticação", async () => {
+  const response = await fetch(baseUrl + "/api/tickets/responsaveis");
+  assert.equal(response.status, 401);
+});

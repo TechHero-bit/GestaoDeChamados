@@ -77,11 +77,24 @@
             [ticket]="currentTicket"
             [saving]="savingProperties()"
             [error]="propertiesError()"
+            [assignees]="assignees()"
+            [loadingAssignees]="loadingAssignees()"
+            [assigneesError]="assigneesError()"
+            (assigneeChanged)="updateAssignee($event)"
+            (reloadAssignees)="loadAssignees()"
             (statusChanged)="updateStatus($event)"
             (priorityChanged)="updatePriority($event)"
           />
         </div>
 
+        <div class="card overflow-hidden">
+          <app-ticket-attachments
+            [ticket]="currentTicket"
+            [refreshing]="refreshingAttachments()"
+            [error]="attachmentsError()"
+            (refreshRequested)="refreshAttachments()"
+          />
+        </div>
       </aside>
     </div>
   }

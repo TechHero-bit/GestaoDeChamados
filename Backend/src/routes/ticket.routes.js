@@ -16,6 +16,7 @@ import {
   excluirTicket,
   finalizarRascunhoResposta,
   listarTickets,
+  listarResponsaveis,
   responderTicket,
 } from "../controllers/ticket.controller.js";
 import { authenticate } from "../middlewares/auth.middleware.js";
@@ -36,6 +37,12 @@ router.get(
   "/",
   rateLimitMiddleware(generalLimiter, (req) => req.user?.id || getClientIp(req)),
   listarTickets,
+);
+
+router.get(
+  "/responsaveis",
+  rateLimitMiddleware(generalLimiter, (req) => req.user?.id || getClientIp(req)),
+  listarResponsaveis,
 );
 
 // GET /api/tickets/:id — Buscar ticket com mensagens

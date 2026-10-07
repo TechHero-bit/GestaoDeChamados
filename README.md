@@ -93,6 +93,7 @@ Execute no SQL Editor do Supabase, rigorosamente nesta ordem:
 7. `database/migrations/007_create_microsoft_oauth.sql`
 8. `database/migrations/008_add_user_email_signatures.sql`
 9. `database/migrations/009_create_ticket_message_attachments.sql` (manual; cria o bucket privado `AnexosChamados`)
+10. `database/migrations/010_add_ticket_assignee.sql` (manual; permite atribuir um administrador responsável ao chamado)
 
 ### Estrutura das Tabelas Principais:
 - **`users`**: Armazena colaboradores (`nome`, `email`, `password_hash`, `role: ADMIN | AGENT`, `ativo`, `ultimo_login`).
@@ -179,9 +180,10 @@ Abra `http://localhost:4200`.
 | `POST` | `/api/webhooks/outlook/attachments/complete` | `x-webhook-secret` | Confirma arquivo escrito diretamente no Storage |
 | `POST` | `/api/webhooks/outlook/attachments/fail` | `x-webhook-secret` | Marca falha parcial de processamento |
 | `GET` | `/api/tickets` | Autenticada (Rate Limit) | Lista e filtra chamados |
+| `GET` | `/api/tickets/responsaveis` | Autenticada | Lista id, nome e e-mail de administradores ativos para atribuição |
 | `GET` | `/api/tickets/:id` | Autenticada | Retorna ticket, mensagens e metadados seguros dos anexos |
 | `GET` | `/api/tickets/:id/attachments/:attachmentId` | Autenticada | Abre/baixa attachment recebido por URL privada temporária |
-| `PUT` | `/api/tickets/:id` | Autenticada | Atualiza o status do chamado |
+| `PUT` | `/api/tickets/:id` | Autenticada | Atualiza status, prioridade e responsável do chamado |
 | `DELETE` | `/api/tickets/:id` | Autenticada (Apenas `ADMIN`) | Exclui chamado e mensagens associadas |
 | `POST` | `/api/tickets/:id/reply` | Autenticada (Rate Limit 10/min) | Envia resposta ao solicitante via Outlook |
 | `GET` | `/api/integrations/microsoft/connect` | Autenticada | Inicia conexão OAuth da conta Microsoft do usuário |
@@ -258,3 +260,11 @@ O mesmo repositório Git alimenta dois projetos independentes na Vercel:
 ### Microsoft OAuth
 
 A primeira etapa da integração Outlook permite conectar a conta Microsoft individual de cada usuário. Configure as cinco variáveis `MICROSOFT_*` no backend e registre no Microsoft Entra o redirect URI `https://gestao-de-chamados-backend.vercel.app/api/integrations/microsoft/callback`. Execute a migration 007 manualmente no Supabase; nenhum deploy ou migration é executado automaticamente.
+
+## Anexos e atribuição na tela de atendimento
+
+A lateral do chamado reúne os anexos recebidos de todas as mensagens, incluindo imagens do e-mail. Exibe quantidade, nome, tipo, tamanho, data e situação do processamento. Arquivos disponíveis podem ser abertos ou baixados; o botão Atualizar consulta novamente a conversa sem perder o texto da resposta.
+
+O campo Responsável, em Propriedades, salva automaticamente um administrador ativo ou remove a atribuição pela opção Sem responsável. Usuários autenticados podem atribuir; o backend valida o perfil e a situação do destinatário antes de salvar. Responsáveis que ficarem inativos continuam identificados no chamado e podem ser substituídos. A resposta continua sendo enviada ao solicitante do chamado.
+
+**Antes de publicar esta versão**, execute manualmente a migration 010 no Supabase após as anteriores. Não há novas variáveis de ambiente. O recebimento de arquivos depende da migration 009 e do fluxo Power Automate com metadados, upload e confirmação descrito em Backend/README.md; anexos antigos que não foram importados não são recuperados automaticamente. O envio de anexos nas respostas continua usando a integração Microsoft existente.

@@ -153,6 +153,12 @@ A ação HTTP usada para upload direto pode exigir licença Premium do Power Aut
 
 ### Leitura no SmartDesk
 
-`GET /api/tickets/:id` devolve cada mensagem com `attachments: []` ou metadados seguros (`id`, nome, MIME, tamanho, `is_inline`, status); `storage_path`, token e URL assinada não são expostos. Imagens CID (`is_inline: true`) são preservadas no banco e não aparecem como arquivo regular na timeline atual, que renderiza o corpo como texto simples.
+`GET /api/tickets/:id` devolve cada mensagem com `attachments: []` ou metadados seguros (`id`, nome, MIME, tamanho, `is_inline`, status); `storage_path`, token e URL assinada não são expostos. Imagens CID (`is_inline: true`) são preservadas no banco e exibidas como arquivos na timeline e na seção lateral Anexos. O corpo permanece em texto simples.
 
 O frontend abre ou baixa arquivos disponíveis por `GET /api/tickets/:ticketId/attachments/:attachmentId[?download=1]`. A rota exige a sessão existente, confirma que o anexo pertence ao ticket solicitado e só então redireciona para uma URL privada temporária de 60 segundos.
+
+## Atribuição de responsáveis
+
+Execute manualmente a migration 010_add_ticket_assignee.sql após a 009 antes de publicar esta versão. Ela adiciona tickets.responsavel_id, uma chave estrangeira para users com ON DELETE SET NULL e um índice. Chamados existentes começam sem responsável.
+
+GET /api/tickets/responsaveis exige autenticação e retorna somente id, nome e e-mail de administradores ativos. PUT /api/tickets/:id aceita responsavel_id como UUID de administrador ativo ou null para remover a atribuição, junto de status e prioridade. Administradores inativos, agentes e usuários inexistentes são rejeitados. As consultas de chamados incluem responsavel_id e o objeto responsavel com id, nome, e-mail, perfil e situação, sem dados de autenticação.

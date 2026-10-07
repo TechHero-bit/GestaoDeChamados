@@ -25,6 +25,12 @@ export interface TicketMessage {
   attachments: IncomingAttachment[];
 }
 
+export interface TicketAssignee {
+  id: string;
+  nome: string;
+  email: string;
+}
+
 export interface Ticket {
   id: string;
   remetente_email: string;
@@ -33,13 +39,15 @@ export interface Ticket {
   corpo_mensagem: string;
   status: TicketStatus;
   prioridade: TicketPriority;
+  responsavel_id: string | null;
+  responsavel?: (TicketAssignee & { ativo: boolean; role: 'ADMIN' | 'AGENT' }) | null;
   outlook_message_id?: string | null;
   data_recebimento?: string | null;
   data_criacao: string;
   data_atualizacao: string;
 }
 
-export type TicketUpdatePayload = Partial<Pick<Ticket, 'status' | 'prioridade'>>;
+export type TicketUpdatePayload = Partial<Pick<Ticket, 'status' | 'prioridade' | 'responsavel_id'>>;
 
 export interface TicketDetail extends Ticket {
   messages: TicketMessage[];

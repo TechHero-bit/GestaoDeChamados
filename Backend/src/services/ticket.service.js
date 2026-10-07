@@ -8,6 +8,8 @@ const TICKET_FIELDS = [
   "corpo_mensagem",
   "status",
   "prioridade",
+  "responsavel_id",
+  "responsavel:users!tickets_responsavel_id_fkey(id,nome,email,ativo,role)",
   "outlook_message_id",
   "outlook_last_message_id",
   "outlook_conversation_id",
@@ -16,7 +18,7 @@ const TICKET_FIELDS = [
   "data_atualizacao",
 ].join(",");
 
-const UPDATEABLE_TICKET_FIELDS = new Set(["status", "prioridade"]);
+const UPDATEABLE_TICKET_FIELDS = new Set(["status", "prioridade", "responsavel_id"]);
 
 function databaseError(action, cause) {
   return Object.assign(new Error(`Não foi possível ${action}.`), {
@@ -348,7 +350,19 @@ export async function criar(
   return { ticket, message };
 }
 
-export async function atualizarTicket(id, dados) {
+export async function listarResponsaveis({ supabase = getSupabase() } = {}) {
+  const { data, error } = await supabase
+    .from("users")
+    .select("id,nome,email")
+    .eq("role", "ADMIN")
+    .eq("ativo", true)
+    .order("nome", { ascending: true });
+
+  if (error) throw databaseError("listar os administradores responsáveis", error);
+  return data || [];
+}
+
+export async function atualizarTicket(id, dados, { supabase = getSupabase() } = {}) {
   const updates = Object.fromEntries(
     Object.entries(dados || {}).filter(
       ([field, value]) =>
@@ -363,7 +377,24 @@ export async function atualizarTicket(id, dados) {
     );
   }
 
-  const { data, error } = await getSupabase()
+  if (updates.responsavel_id !== undefined && updates.responsavel_id !== null) {
+    const { data: responsavel, error } = await supabase
+      .from("users")
+      .select("id")
+      .eq("id", updates.responsavel_id)
+      .eq("role", "ADMIN")
+      .eq("ativo", true)
+      .maybeSingle();
+
+    if (error) throw databaseError("validar o responsável pelo chamado", error);
+    if (!responsavel) {
+      throw Object.assign(new Error("Selecione um administrador ativo como responsável."), {
+        statusCode: 400,
+      });
+    }
+  }
+
+  const { data, error } = await supabase
     .from("tickets")
     .update(updates)
     .eq("id", id)

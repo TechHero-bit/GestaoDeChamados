@@ -35,6 +35,7 @@ export const listTicketsQuerySchema = z.object({
  * não chegam ao service como campos atualizáveis.
  */
 export const updateTicketSchema = z.object({
+  responsavel_id: z.string().uuid("Responsável inválido.").nullable().optional(),
   status: z
     .enum(VALID_STATUSES, {
       errorMap: () => ({
@@ -50,7 +51,7 @@ export const updateTicketSchema = z.object({
     })
     .optional(),
 }).refine(
-  (dados) => dados.status !== undefined || dados.prioridade !== undefined,
+  (dados) => dados.status !== undefined || dados.prioridade !== undefined || dados.responsavel_id !== undefined,
   {
     message: "Informe ao menos um campo para atualizar.",
   },

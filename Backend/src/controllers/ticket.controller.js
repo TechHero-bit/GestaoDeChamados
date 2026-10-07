@@ -39,6 +39,15 @@ function validationError(res, resultado, message = "Dados inválidos.") {
 
 export { getReplyMessageId };
 
+export async function listarResponsaveis(req, res, next) {
+  try {
+    const responsaveis = await ticketService.listarResponsaveis();
+    return res.json({ success: true, data: responsaveis });
+  } catch (error) {
+    next(error);
+  }
+}
+
 function parseTicketId(id, res) {
   const result = ticketIdSchema.safeParse(id);
   if (!result.success) {

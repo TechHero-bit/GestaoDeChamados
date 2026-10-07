@@ -1,9 +1,60 @@
-<section class="side-section" aria-labelledby="attachments-heading">
+<section class="side-section" aria-labelledby="attachments-heading" [attr.aria-busy]="refreshing()">
   <div class="mb-3 flex items-center justify-between gap-3">
-    <h2 id="attachments-heading" class="text-sm font-semibold text-text">Anexos recebidos</h2>
-    <span class="rounded-full bg-surface-elevated px-2 py-0.5 text-xs text-text-muted">0</span>
+    <div class="flex items-center gap-2">
+      <h2 id="attachments-heading" class="text-sm font-semibold text-text">Anexos</h2>
+      <span class="rounded-full bg-surface-elevated px-2 py-0.5 text-xs text-text-muted">{{
+        attachments().length
+      }}</span>
+    </div>
+    <button
+      type="button"
+      class="toolbar-button"
+      [disabled]="refreshing()"
+      (click)="refreshRequested.emit()"
+      aria-label="Atualizar anexos"
+      title="Atualizar anexos"
+    >
+      <span
+        class="material-symbols-outlined text-lg"
+        [class.animate-spin]="refreshing()"
+        aria-hidden="true"
+        >refresh</span
+      >
+    </button>
   </div>
-  <p class="text-sm leading-5 text-text-muted">
-    Os arquivos recebidos pelo Outlook aparecerão aqui quando essa integração estiver disponível.
-  </p>
+  @if (error()) {
+    <p class="mb-3 text-xs text-danger" role="alert">{{ error() }}</p>
+  }
+  <div class="max-h-96 space-y-3 overflow-y-auto" aria-live="polite">
+    @for (attachment of attachments(); track attachment.id) {
+      <div>
+        <app-file-attachment
+          [name]="attachment.file_name"
+          [size]="attachment.file_size"
+          [contentType]="attachment.content_type"
+          [state]="attachmentState(attachment)"
+          [actionLabel]="attachment.processing_status === 'Disponivel' ? 'Abrir' : null"
+          [secondaryActionLabel]="attachment.processing_status === 'Disponivel' ? 'Baixar' : null"
+          (actionRequested)="openAttachment(attachment)"
+          (secondaryActionRequested)="openAttachment(attachment, true)"
+        />
+        <p class="mt-1 px-1 text-xs text-text-muted">
+          {{ formatLongDate(attachment.receivedAt) }}
+          @if (attachment.is_inline) {
+            <span>· Imagem do e-mail</span>
+          }
+        </p>
+      </div>
+    } @empty {
+      <div class="py-3 text-center">
+        <span class="material-symbols-outlined mb-1 text-2xl text-text-muted" aria-hidden="true"
+          >attach_file</span
+        >
+        <p class="text-sm text-text-secondary">Nenhum anexo neste chamado.</p>
+        <p class="mt-1 text-xs leading-5 text-text-muted">
+          Os arquivos recebidos pelo Outlook aparecerão aqui.
+        </p>
+      </div>
+    }
+  </div>
 </section>

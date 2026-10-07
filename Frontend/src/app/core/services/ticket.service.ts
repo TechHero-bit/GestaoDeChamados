@@ -6,6 +6,7 @@ import {
   ApiDataResponse,
   Ticket,
   TicketDetail,
+  TicketAssignee,
   TicketListFilters,
   TicketListResponse,
   TicketMessage,
@@ -30,6 +31,13 @@ export class TicketService {
     return this.http
       .get<TicketListResponse>(this.apiUrl, { params })
       .pipe(catchError((error) => this.handleError(error)));
+  }
+
+  listarResponsaveis(): Observable<TicketAssignee[]> {
+    return this.http.get<ApiDataResponse<TicketAssignee[]>>(this.apiUrl + '/responsaveis').pipe(
+      map((response) => response.data),
+      catchError((error) => this.handleError(error)),
+    );
   }
 
   buscarPorId(id: string): Observable<TicketDetail> {
