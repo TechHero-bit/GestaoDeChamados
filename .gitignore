@@ -40,3 +40,9 @@ coverage/
 
 # Database
 # Migrations são código de produção e precisam permanecer versionadas.
+
+# Scripts locais / temporários (evita subir scripts operacionais com credenciais)
+scripts/*
+Backend/scripts/*
+!Backend/scripts/create-admin.js
+!Backend/scripts/diag-shared-mailbox-get.js
