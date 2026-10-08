@@ -268,3 +268,7 @@ A lateral do chamado reúne os anexos recebidos de todas as mensagens, incluindo
 O campo Responsável, em Propriedades, salva automaticamente um administrador ativo ou remove a atribuição pela opção Sem responsável. Usuários autenticados podem atribuir; o backend valida o perfil e a situação do destinatário antes de salvar. Responsáveis que ficarem inativos continuam identificados no chamado e podem ser substituídos. A resposta continua sendo enviada ao solicitante do chamado.
 
 **Antes de publicar esta versão**, execute manualmente a migration 010 no Supabase após as anteriores. Não há novas variáveis de ambiente. O recebimento de arquivos depende da migration 009 e do fluxo Power Automate com metadados, upload e confirmação descrito em Backend/README.md; anexos antigos que não foram importados não são recuperados automaticamente. O envio de anexos nas respostas continua usando a integração Microsoft existente.
+
+## Dashboard Kanban e preparação Planner
+
+O dashboard inclui um quadro interativo com arrastar e soltar e operação por teclado. Veja [implementação e homologação](docs/kanban.md) e [preparação da sincronização Planner](docs/planner-sync.md). A sincronização permanece desativada e o SQL em database/planned não deve ser aplicado nesta etapa.

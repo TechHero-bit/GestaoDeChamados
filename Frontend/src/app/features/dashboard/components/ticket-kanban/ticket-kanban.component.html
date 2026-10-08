@@ -1,0 +1,211 @@
+<section aria-labelledby="kanban-title" class="kanban-panel">
+  <div class="mb-4 flex flex-wrap items-start justify-between gap-3">
+    <div>
+      <h2 id="kanban-title" class="text-lg font-semibold text-text">Quadro de chamados</h2>
+      <p id="kanban-help" class="mt-1 text-sm text-text-secondary">
+        Arraste pela alça para mudar de coluna ou use o seletor Mover para em cada cartão.
+      </p>
+    </div>
+    <button
+      type="button"
+      class="secondary-button"
+      data-kanban-refresh
+      [disabled]="busy()"
+      (click)="reload()"
+    >
+      <span
+        class="material-symbols-outlined text-lg"
+        [class.animate-spin]="loading()"
+        aria-hidden="true"
+        >refresh</span
+      >
+      Atualizar quadro
+    </button>
+  </div>
+
+  <form
+    class="card mb-4 grid items-end gap-3 p-4 sm:grid-cols-2 xl:grid-cols-[minmax(180px,1fr)_180px_220px_auto]"
+    (ngSubmit)="applyFilters()"
+    aria-label="Filtros do quadro"
+  >
+    <label>
+      <span class="field-label">Buscar chamado</span>
+      <input
+        class="field-control"
+        type="search"
+        name="search"
+        [(ngModel)]="search"
+        [disabled]="busy()"
+        maxlength="200"
+        placeholder="Título ou solicitante"
+      />
+    </label>
+    <label>
+      <span class="field-label">Prioridade</span>
+      <select class="field-control" name="priority" [(ngModel)]="priority" [disabled]="busy()">
+        <option value="">Todas as prioridades</option>
+        <option value="Alta">Alta</option>
+        <option value="Normal">Normal</option>
+        <option value="Baixa">Baixa</option>
+      </select>
+    </label>
+    <label>
+      <span class="field-label">Responsável</span>
+      <select class="field-control" name="assignee" [(ngModel)]="assignee" [disabled]="busy()">
+        <option value="">Todos os responsáveis</option>
+        <option value="none">Sem responsável</option>
+        @for (user of assignees(); track user.id) {
+          <option [value]="user.id">{{ user.nome }}</option>
+        }
+      </select>
+    </label>
+    <div class="flex gap-2">
+      <button class="primary-button" type="submit" [disabled]="busy()">Filtrar</button>
+      <button class="ghost-button" type="button" [disabled]="busy()" (click)="clearFilters()">
+        Limpar
+      </button>
+    </div>
+  </form>
+
+  @if (assigneesError()) {
+    <p class="mb-3 text-sm text-text-secondary" role="status">{{ assigneesError() }}</p>
+  }
+  @if (error()) {
+    <div class="feedback mb-4 border-danger/30 bg-danger-soft text-on-error-container" role="alert">
+      <span class="material-symbols-outlined" aria-hidden="true">error</span>
+      <div class="min-w-0 flex-1">
+        <p class="font-semibold">Atenção ao quadro</p>
+        <p>{{ error() }}</p>
+      </div>
+      <button type="button" class="secondary-button" [disabled]="busy()" (click)="reload()">
+        Atualizar quadro
+      </button>
+    </div>
+  }
+  <p class="sr-only" role="status" aria-live="polite" aria-atomic="true">{{ announcement() }}</p>
+  @if (loading()) {
+    <p role="status" class="mb-3 text-sm text-text-secondary">Carregando chamados…</p>
+  }
+
+  <div
+    cdkDropListGroup
+    class="kanban-grid"
+    [class.kanban-dragging]="dragging()"
+    [attr.aria-busy]="loading()"
+  >
+    @for (column of columns(); track column.status) {
+      <section
+        class="kanban-column"
+        [attr.data-status]="column.status"
+        [class.kanban-column-active]="dropTarget() === column.status"
+        [attr.aria-labelledby]="'heading-' + column.key"
+      >
+        <header class="kanban-column-header">
+          <span class="material-symbols-outlined text-accent" aria-hidden="true">{{
+            column.icon
+          }}</span>
+          <h3 [id]="'heading-' + column.key" class="font-semibold text-text">{{ column.label }}</h3>
+          <span class="kanban-count" [attr.aria-label]="column.total + ' chamados'">{{
+            column.total
+          }}</span>
+        </header>
+        <div
+          cdkDropList
+          class="kanban-drop-zone"
+          [cdkDropListData]="column"
+          [cdkDropListSortingDisabled]="true"
+          [cdkDropListDisabled]="!canMove()"
+          (cdkDropListEntered)="dropTarget.set(column.status)"
+          (cdkDropListExited)="dropTarget.set(null)"
+          (cdkDropListDropped)="onDrop($event)"
+          aria-describedby="kanban-help"
+        >
+          @for (ticket of column.tickets; track ticket.id) {
+            <article
+              cdkDrag
+              class="kanban-ticket"
+              [cdkDragData]="ticket"
+              [cdkDragDisabled]="!canMove()"
+              [cdkDragStartDelay]="{ mouse: 0, touch: 180 }"
+              [class.kanban-ticket-saving]="pendingId() === ticket.id"
+              [attr.aria-busy]="pendingId() === ticket.id"
+              (cdkDragStarted)="dragging.set(true)"
+              (cdkDragEnded)="dragging.set(false); dropTarget.set(null)"
+            >
+              <div class="kanban-placeholder" *cdkDragPlaceholder>Solte para mover o chamado</div>
+              <div class="flex items-center justify-between gap-2">
+                <span class="font-mono text-xs font-semibold text-accent">{{
+                  shortTicketId(ticket.id)
+                }}</span>
+                <div class="flex items-center gap-1">
+                  <app-priority-badge [priority]="ticket.prioridade || 'Normal'" />
+                  <span
+                    cdkDragHandle
+                    class="kanban-handle"
+                    aria-hidden="true"
+                    title="Arraste para outra coluna"
+                  >
+                    <span class="material-symbols-outlined">drag_indicator</span>
+                  </span>
+                </div>
+              </div>
+              <a class="kanban-title" [routerLink]="['/tickets', ticket.id]">{{
+                ticket.assunto
+              }}</a>
+              <p class="truncate text-xs text-text-secondary" [title]="ticket.remetente_email">
+                {{ requesterName(ticket.remetente_nome, ticket.remetente_email) }}
+              </p>
+              <div class="kanban-metadata">
+                <span class="material-symbols-outlined text-lg" aria-hidden="true">person</span>
+                <span class="min-w-0 truncate" [title]="ticket.responsavel?.email || ''">
+                  {{ ticket.responsavel?.nome || 'Sem responsável' }}
+                </span>
+              </div>
+              <p class="text-xs text-text-muted">
+                Atualizado {{ formatDate(ticket.data_atualizacao) }}
+              </p>
+              <label class="kanban-move-label">
+                <span class="text-xs font-medium text-text-secondary">Mover para</span>
+                <select
+                  class="field-control"
+                  [ngModel]="ticket.status"
+                  [ngModelOptions]="{ standalone: true }"
+                  [attr.data-move-ticket]="ticket.id"
+                  [attr.aria-label]="'Mover chamado ' + ticket.assunto + ' para'"
+                  [disabled]="!canMove() || dragging()"
+                  (ngModelChange)="onKeyboardMove($event, ticket)"
+                >
+                  @for (destination of columns(); track destination.status) {
+                    <option [value]="destination.status">{{ destination.label }}</option>
+                  }
+                </select>
+              </label>
+              @if (pendingId() === ticket.id) {
+                <p class="text-xs font-semibold text-accent">Salvando status…</p>
+              }
+            </article>
+          } @empty {
+            <p class="kanban-empty">
+              {{ loading() ? 'Carregando…' : 'Nenhum chamado nesta coluna' }}
+            </p>
+          }
+        </div>
+        <footer class="kanban-column-footer">
+          <span class="text-xs text-text-muted"
+            >{{ column.tickets.length }} de {{ column.total }}</span
+          >
+          @if (column.tickets.length < column.total) {
+            <button
+              class="ghost-button"
+              type="button"
+              [disabled]="busy() || stale()"
+              (click)="loadMore(column)"
+            >
+              Carregar mais
+            </button>
+          }
+        </footer>
+      </section>
+    }
+  </div>
+</section>

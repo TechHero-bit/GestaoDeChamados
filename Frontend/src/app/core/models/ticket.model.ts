@@ -47,7 +47,11 @@ export interface Ticket {
   data_atualizacao: string;
 }
 
-export type TicketUpdatePayload = Partial<Pick<Ticket, 'status' | 'prioridade' | 'responsavel_id'>>;
+export type TicketUpdatePayload = Partial<
+  Pick<Ticket, 'status' | 'prioridade' | 'responsavel_id'>
+> & {
+  expected_data_atualizacao?: string;
+};
 
 export interface TicketDetail extends Ticket {
   messages: TicketMessage[];
@@ -55,6 +59,9 @@ export interface TicketDetail extends Ticket {
 
 export interface TicketListFilters {
   status?: TicketStatus;
+  prioridade?: TicketPriority;
+  responsavel_id?: string;
+  sort?: 'created' | 'updated';
   search?: string;
   date?: string;
   page?: number;

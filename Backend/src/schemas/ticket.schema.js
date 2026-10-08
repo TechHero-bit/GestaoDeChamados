@@ -9,6 +9,9 @@ export const ticketIdSchema = z
 
 export const listTicketsQuerySchema = z.object({
   status: z.enum(VALID_STATUSES).optional(),
+  prioridade: z.enum(VALID_PRIORITIES).optional(),
+  responsavel_id: z.union([z.string().uuid(), z.literal("none")]).optional(),
+  sort: z.enum(["created", "updated"]).default("created"),
   search: z
     .string()
     .trim()
@@ -35,6 +38,7 @@ export const listTicketsQuerySchema = z.object({
  * não chegam ao service como campos atualizáveis.
  */
 export const updateTicketSchema = z.object({
+  expected_data_atualizacao: z.string().datetime({ offset: true }).optional(),
   responsavel_id: z.string().uuid("Responsável inválido.").nullable().optional(),
   status: z
     .enum(VALID_STATUSES, {

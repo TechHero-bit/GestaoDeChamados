@@ -89,103 +89,131 @@
     </article>
   </section>
 
-  <div class="grid items-start gap-3 lg:grid-cols-[minmax(0,1.45fr)_minmax(300px,0.55fr)]">
-    <section class="card content-enter overflow-hidden" aria-labelledby="recent-tickets-heading">
-      <div class="card-header justify-between">
-        <div>
-          <h2 id="recent-tickets-heading" class="font-semibold text-text">Chamados recentes</h2>
-          <p class="mt-0.5 text-xs text-text-muted">Últimas movimentações da fila</p>
+  <nav class="mb-5 flex gap-2" aria-label="Visualização do dashboard">
+    <button
+      type="button"
+      class="secondary-button"
+      [attr.aria-pressed]="view() === 'board'"
+      [class.bg-accent-soft]="view() === 'board'"
+      (click)="view.set('board')"
+    >
+      <span class="material-symbols-outlined text-lg" aria-hidden="true">view_kanban</span> Quadro
+    </button>
+    <button
+      type="button"
+      class="secondary-button"
+      [attr.aria-pressed]="view() === 'overview'"
+      [class.bg-accent-soft]="view() === 'overview'"
+      (click)="view.set('overview')"
+    >
+      Visão geral
+    </button>
+    <a class="ghost-button ml-auto" routerLink="/tickets">Ver listagem</a>
+  </nav>
+  <div [hidden]="view() !== 'board'">
+    <app-ticket-kanban (statusChanged)="loadDashboard()" />
+  </div>
+  <div [hidden]="view() !== 'overview'">
+    <div class="grid items-start gap-3 lg:grid-cols-[minmax(0,1.45fr)_minmax(300px,0.55fr)]">
+      <section class="card content-enter overflow-hidden" aria-labelledby="recent-tickets-heading">
+        <div class="card-header justify-between">
+          <div>
+            <h2 id="recent-tickets-heading" class="font-semibold text-text">Chamados recentes</h2>
+            <p class="mt-0.5 text-xs text-text-muted">Últimas movimentações da fila</p>
+          </div>
+          <a class="ghost-button text-accent" routerLink="/tickets">
+            Ver todos
+            <span class="material-symbols-outlined text-lg" aria-hidden="true">arrow_forward</span>
+          </a>
         </div>
-        <a class="ghost-button text-accent" routerLink="/tickets">
-          Ver todos
-          <span class="material-symbols-outlined text-lg" aria-hidden="true">arrow_forward</span>
-        </a>
-      </div>
-      @if (loading()) {
-        <div class="space-y-3 p-4" aria-label="Carregando chamados recentes">
-          @for (row of [1, 2, 3, 4]; track row) {
-            <div class="skeleton h-14 w-full"></div>
-          }
-        </div>
-      } @else {
-        <div class="divide-y divide-border-subtle">
-          @for (ticket of recentTickets(); track ticket.id) {
-            <a
-              class="group grid gap-2 px-4 py-3 transition-colors duration-150 hover:bg-surface-hover sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center"
-              [routerLink]="['/tickets', ticket.id]"
-            >
-              <div class="min-w-0">
-                <div class="mb-1 flex flex-wrap items-center gap-2">
-                  <span class="font-mono text-xs font-semibold text-accent">{{
-                    shortTicketId(ticket.id)
-                  }}</span>
-                  <app-status-badge [status]="ticket.status" />
-                  <app-priority-badge [priority]="ticket.prioridade" />
-                </div>
-                <p class="truncate text-sm font-semibold text-text">{{ ticket.assunto }}</p>
-                <p class="mt-0.5 truncate text-xs text-text-muted">
-                  {{ requesterName(ticket.remetente_nome, ticket.remetente_email) }}
-                </p>
-              </div>
-              <div class="flex items-center gap-2 text-xs text-text-muted">
-                {{ formatDate(ticket.data_atualizacao || ticket.data_criacao) }}
-                <span
-                  class="material-symbols-outlined text-lg transition-transform duration-150 group-hover:translate-x-0.5"
-                  aria-hidden="true"
-                  >arrow_forward</span
-                >
-              </div>
-            </a>
-          } @empty {
-            <div class="px-5 py-12 text-center">
-              <span
-                class="material-symbols-outlined mb-2 text-4xl text-text-muted"
-                aria-hidden="true"
-                >inbox</span
-              >
-              <p class="font-semibold text-text">Nenhum chamado encontrado</p>
-            </div>
-          }
-        </div>
-      }
-    </section>
-
-    <section class="card content-enter overflow-hidden" aria-labelledby="status-summary-heading">
-      <div class="card-header">
-        <span class="flex size-9 items-center justify-center rounded-lg bg-accent-soft text-accent">
-          <span class="material-symbols-outlined text-xl" aria-hidden="true">donut_small</span>
-        </span>
-        <div>
-          <h2 id="status-summary-heading" class="font-semibold text-text">Situação da fila</h2>
-          <p class="mt-0.5 text-xs text-text-muted">Distribuição por status</p>
-        </div>
-      </div>
-      <div class="space-y-5 p-5">
         @if (loading()) {
-          @for (row of [1, 2, 3]; track row) {
-            <div>
-              <div class="skeleton mb-2 h-4 w-28"></div>
-              <div class="skeleton h-2 w-full rounded-full"></div>
-            </div>
-          }
+          <div class="space-y-3 p-4" aria-label="Carregando chamados recentes">
+            @for (row of [1, 2, 3, 4]; track row) {
+              <div class="skeleton h-14 w-full"></div>
+            }
+          </div>
         } @else {
-          @for (item of statusItems(); track item.label) {
-            <div>
-              <div class="mb-2 flex items-center justify-between gap-3 text-sm">
-                <span class="font-medium text-text-secondary">{{ item.label }}</span>
-                <span class="font-semibold text-text">{{ item.value }}</span>
+          <div class="divide-y divide-border-subtle">
+            @for (ticket of recentTickets(); track ticket.id) {
+              <a
+                class="group grid gap-2 px-4 py-3 transition-colors duration-150 hover:bg-surface-hover sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center"
+                [routerLink]="['/tickets', ticket.id]"
+              >
+                <div class="min-w-0">
+                  <div class="mb-1 flex flex-wrap items-center gap-2">
+                    <span class="font-mono text-xs font-semibold text-accent">{{
+                      shortTicketId(ticket.id)
+                    }}</span>
+                    <app-status-badge [status]="ticket.status" />
+                    <app-priority-badge [priority]="ticket.prioridade" />
+                  </div>
+                  <p class="truncate text-sm font-semibold text-text">{{ ticket.assunto }}</p>
+                  <p class="mt-0.5 truncate text-xs text-text-muted">
+                    {{ requesterName(ticket.remetente_nome, ticket.remetente_email) }}
+                  </p>
+                </div>
+                <div class="flex items-center gap-2 text-xs text-text-muted">
+                  {{ formatDate(ticket.data_atualizacao || ticket.data_criacao) }}
+                  <span
+                    class="material-symbols-outlined text-lg transition-transform duration-150 group-hover:translate-x-0.5"
+                    aria-hidden="true"
+                    >arrow_forward</span
+                  >
+                </div>
+              </a>
+            } @empty {
+              <div class="px-5 py-12 text-center">
+                <span
+                  class="material-symbols-outlined mb-2 text-4xl text-text-muted"
+                  aria-hidden="true"
+                  >inbox</span
+                >
+                <p class="font-semibold text-text">Nenhum chamado encontrado</p>
               </div>
-              <div class="h-2 overflow-hidden rounded-full bg-surface-elevated">
-                <div
-                  class="h-full rounded-full transition-[width] duration-200"
-                  [class]="item.tone"
-                  [style.width.%]="statusPercentage(item.value)"
-                ></div>
-              </div>
-            </div>
-          }
+            }
+          </div>
         }
-      </div>
-    </section>
+      </section>
+
+      <section class="card content-enter overflow-hidden" aria-labelledby="status-summary-heading">
+        <div class="card-header">
+          <span
+            class="flex size-9 items-center justify-center rounded-lg bg-accent-soft text-accent"
+          >
+            <span class="material-symbols-outlined text-xl" aria-hidden="true">donut_small</span>
+          </span>
+          <div>
+            <h2 id="status-summary-heading" class="font-semibold text-text">Situação da fila</h2>
+            <p class="mt-0.5 text-xs text-text-muted">Distribuição por status</p>
+          </div>
+        </div>
+        <div class="space-y-5 p-5">
+          @if (loading()) {
+            @for (row of [1, 2, 3]; track row) {
+              <div>
+                <div class="skeleton mb-2 h-4 w-28"></div>
+                <div class="skeleton h-2 w-full rounded-full"></div>
+              </div>
+            }
+          } @else {
+            @for (item of statusItems(); track item.label) {
+              <div>
+                <div class="mb-2 flex items-center justify-between gap-3 text-sm">
+                  <span class="font-medium text-text-secondary">{{ item.label }}</span>
+                  <span class="font-semibold text-text">{{ item.value }}</span>
+                </div>
+                <div class="h-2 overflow-hidden rounded-full bg-surface-elevated">
+                  <div
+                    class="h-full rounded-full transition-[width] duration-200"
+                    [class]="item.tone"
+                    [style.width.%]="statusPercentage(item.value)"
+                  ></div>
+                </div>
+              </div>
+            }
+          }
+        </div>
+      </section>
+    </div>
   </div>
 </main>

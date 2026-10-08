@@ -46,3 +46,8 @@ scripts/*
 Backend/scripts/*
 !Backend/scripts/create-admin.js
 !Backend/scripts/diag-shared-mailbox-get.js
+
+# Verificação local do Kanban
+Frontend/test-results/
+Frontend/playwright-report/
+work/

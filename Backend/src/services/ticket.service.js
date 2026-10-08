@@ -43,24 +43,31 @@ export function getHelpdeskEmail() {
  */
 export async function listar({
   status,
+  prioridade,
+  responsavel_id,
+  sort = "created",
   search,
   date,
   page = 1,
   pageSize = 10,
-} = {}) {
-  const supabase = getSupabase();
+} = {}, { supabase = getSupabase() } = {}) {
   const from = (page - 1) * pageSize;
   const to = from + pageSize - 1;
 
   let query = supabase
     .from("tickets")
     .select(TICKET_FIELDS, { count: "exact" })
-    .order("data_criacao", { ascending: false })
+    .order(sort === "updated" ? "data_atualizacao" : "data_criacao", { ascending: false })
+    .order("id", { ascending: false })
     .range(from, to);
 
   if (status) {
     query = query.eq("status", status);
   }
+
+  if (prioridade) query = query.eq("prioridade", prioridade);
+  if (responsavel_id === "none") query = query.is("responsavel_id", null);
+  else if (responsavel_id) query = query.eq("responsavel_id", responsavel_id);
 
   const normalizedSearch = search?.replace(/[(),]/g, " ").trim();
   if (normalizedSearch) {
@@ -394,14 +401,23 @@ export async function atualizarTicket(id, dados, { supabase = getSupabase() } = 
     }
   }
 
-  const { data, error } = await supabase
-    .from("tickets")
-    .update(updates)
-    .eq("id", id)
-    .select(TICKET_FIELDS)
-    .maybeSingle();
-
+  // Incrementar a versão também quando um ambiente não possui o trigger histórico.
+  const previousTime = Date.parse(dados.expected_data_atualizacao || "");
+  updates.data_atualizacao = new Date(Number.isFinite(previousTime)
+    ? Math.max(Date.now(), previousTime + 1)
+    : Date.now()).toISOString();
+  let query = supabase.from("tickets").update(updates).eq("id", id);
+  // A condição participa do UPDATE; uma leitura prévia sozinha não evita corridas.
+  if (dados.expected_data_atualizacao !== undefined) {
+    query = query.eq("data_atualizacao", dados.expected_data_atualizacao);
+  }
+  const { data, error } = await query.select(TICKET_FIELDS).maybeSingle();
   if (error) throw databaseError("atualizar o chamado", error);
+  if (!data && dados.expected_data_atualizacao !== undefined) {
+    throw Object.assign(new Error("O chamado foi alterado ou removido por outro atendente. Atualize o quadro e tente novamente."), {
+      statusCode: 409, publicCode: "TICKET_CONFLICT",
+    });
+  }
   return data;
 }
 

@@ -69,7 +69,7 @@ test("salva um administrador ativo sem permitir alterações arbitrárias", asyn
     responsavel_id: adminId, status: "Em Andamento", assunto: "ignorar", payload_original: {},
   }, { supabase });
   assert.equal(updated.responsavel_id, adminId);
-  assert.deepEqual(supabase.state.updates, [{ responsavel_id: adminId, status: "Em Andamento" }]);
+  assert.deepEqual(supabase.state.updates.map(({ data_atualizacao, ...fields }) => fields), [{ responsavel_id: adminId, status: "Em Andamento" }]);
 });
 
 for (const [label, users] of [

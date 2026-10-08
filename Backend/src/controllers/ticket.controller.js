@@ -162,6 +162,9 @@ export async function atualizarTicket(req, res, next) {
     }
 
     const ticket = await ticketService.atualizarTicket(id, resultado.data);
+    if (!ticket) {
+      return res.status(404).json({ success: false, message: "Chamado não encontrado." });
+    }
 
     return res.json({
       success: true,

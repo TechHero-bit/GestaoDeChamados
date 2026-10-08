@@ -2,6 +2,7 @@ import { Component, computed, inject, OnDestroy, OnInit, signal } from '@angular
 import { RouterLink } from '@angular/router';
 import { forkJoin, Subscription, finalize } from 'rxjs';
 import { Ticket } from '../../../../core/models/ticket.model';
+import { TicketKanbanComponent } from '../../components/ticket-kanban/ticket-kanban.component';
 import { TicketService } from '../../../../core/services/ticket.service';
 import { PriorityBadgeComponent } from '../../../../shared/components/priority-badge/priority-badge.component';
 import { StatusBadgeComponent } from '../../../../shared/components/status-badge/status-badge.component';
@@ -13,13 +14,14 @@ import {
 
 @Component({
   selector: 'app-dashboard-page',
-  imports: [RouterLink, PriorityBadgeComponent, StatusBadgeComponent],
+  imports: [RouterLink, PriorityBadgeComponent, StatusBadgeComponent, TicketKanbanComponent],
   templateUrl: './dashboard.page.html',
 })
 export class DashboardPage implements OnInit, OnDestroy {
   private readonly ticketService = inject(TicketService);
   private request?: Subscription;
 
+  readonly view = signal<'board' | 'overview'>('board');
   readonly recentTickets = signal<Ticket[]>([]);
   readonly total = signal(0);
   readonly open = signal(0);
