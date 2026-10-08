@@ -19,7 +19,6 @@ export class IntegrationsPage implements OnInit {
 
   ngOnInit(): void {
     const result = this.route.snapshot.queryParamMap.get('microsoft');
-    if (result === 'connected') this.feedbackMessage.set('Conta Microsoft conectada com sucesso.');
     if (result === 'error') {
       this.errorMessage.set('Não foi possível conectar a conta Microsoft. Tente novamente.');
     }
@@ -32,7 +31,15 @@ export class IntegrationsPage implements OnInit {
       .getStatus()
       .pipe(finalize(() => this.loading.set(false)))
       .subscribe({
-        next: (status) => this.status.set(status),
+        next: (status) => {
+          this.status.set(status);
+          if (
+            this.route.snapshot.queryParamMap.get('microsoft') === 'connected' &&
+            status.connected
+          ) {
+            this.feedbackMessage.set('Conta Microsoft conectada com sucesso.');
+          }
+        },
         error: () => this.errorMessage.set('Não foi possível consultar o status da integração.'),
       });
   }

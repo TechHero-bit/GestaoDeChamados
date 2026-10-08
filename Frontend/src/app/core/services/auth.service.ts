@@ -61,8 +61,7 @@ export class AuthService {
       }),
       catchError((error: HttpErrorResponse) => {
         const message =
-          error.error?.message ||
-          'E-mail ou senha inválidos. Verifique suas credenciais.';
+          error.error?.message || 'E-mail ou senha inválidos. Verifique suas credenciais.';
         return throwError(() => new Error(message));
       }),
     );
@@ -73,17 +72,15 @@ export class AuthService {
    */
   logout(redirectUrl: string = '/login'): Observable<void> {
     const operationVersion = ++this.authOperationVersion;
-    return this.http
-      .post<{ success: boolean }>(`${this.apiUrl}/logout`, {})
-      .pipe(
-        map(() => void 0),
-        catchError(() => of(void 0)),
-        finalize(() => {
-          if (operationVersion !== this.authOperationVersion) return;
-          this.clearLocalState();
-          this.router.navigate([redirectUrl]);
-        }),
-      );
+    return this.http.post<{ success: boolean }>(`${this.apiUrl}/logout`, {}).pipe(
+      map(() => void 0),
+      catchError(() => of(void 0)),
+      finalize(() => {
+        if (operationVersion !== this.authOperationVersion) return;
+        this.clearLocalState();
+        this.router.navigate([redirectUrl]);
+      }),
+    );
   }
 
   /**
@@ -91,9 +88,7 @@ export class AuthService {
    */
   recordActivity(): Observable<void> {
     if (!this.isAuthenticated()) return of(void 0);
-    return this.http.post<void>(`${this.apiUrl}/activity`, {}).pipe(
-      catchError(() => of(void 0)),
-    );
+    return this.http.post<void>(`${this.apiUrl}/activity`, {}).pipe(catchError(() => of(void 0)));
   }
 
   /**
@@ -147,12 +142,10 @@ export class AuthService {
       return;
     }
 
-    const query = new URLSearchParams(
-      typeof window === 'undefined' ? '' : window.location.search,
-    );
+    const query = new URLSearchParams(typeof window === 'undefined' ? '' : window.location.search);
     const isMicrosoftReturn =
       typeof window !== 'undefined' &&
-      window.location.pathname === '/settings/integrations' &&
+      ['/', '/settings/integrations'].includes(window.location.pathname) &&
       ['connected', 'error'].includes(query.get('microsoft') || '');
 
     if (!user || !isMicrosoftReturn) {

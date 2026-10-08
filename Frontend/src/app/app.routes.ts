@@ -1,6 +1,7 @@
 import { Routes } from '@angular/router';
 import { authGuard } from './core/guards/auth.guard';
 import { guestGuard } from './core/guards/guest.guard';
+import { microsoftOAuthLandingPath } from './core/utils/microsoft-oauth-return';
 
 export const routes: Routes = [
   {
@@ -16,7 +17,11 @@ export const routes: Routes = [
     loadComponent: () =>
       import('./layout/app-shell/app-shell.component').then((module) => module.AppShellComponent),
     children: [
-      { path: '', redirectTo: 'dashboard', pathMatch: 'full' },
+      {
+        path: '',
+        pathMatch: 'full',
+        redirectTo: ({ queryParams }) => microsoftOAuthLandingPath(queryParams['microsoft']),
+      },
       {
         path: 'dashboard',
         title: 'Dashboard | SmartDesk',

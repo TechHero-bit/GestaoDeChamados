@@ -223,7 +223,7 @@ O mesmo repositório Git alimenta dois projetos independentes na Vercel:
    - `COOKIE_SAME_SITE=none` (se frontend e backend estiverem em subdomínios diferentes) ou `lax` (se utilizarem o mesmo domínio)
    - `SESSION_IDLE_TIMEOUT_MINUTES=10`
    - `SESSION_ABSOLUTE_TIMEOUT_HOURS=8`
-   - `FRONTEND_URL=https://seu-frontend.vercel.app`
+   - `FRONTEND_URL=https://gestao-de-chamados-centauro.vercel.app`
    - `ALLOW_VERCEL_PREVIEWS=true` (opcional, para testes de preview)
    - `POWER_AUTOMATE_REPLY_URL=https://prod-xx.brazilsouth.logic.azure.com/...`
    - `POWER_AUTOMATE_REPLY_SECRET=seu-segredo-de-resposta`

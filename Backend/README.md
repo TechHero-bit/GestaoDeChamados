@@ -162,3 +162,19 @@ O frontend abre ou baixa arquivos disponíveis por `GET /api/tickets/:ticketId/a
 Execute manualmente a migration 010_add_ticket_assignee.sql após a 009 antes de publicar esta versão. Ela adiciona tickets.responsavel_id, uma chave estrangeira para users com ON DELETE SET NULL e um índice. Chamados existentes começam sem responsável.
 
 GET /api/tickets/responsaveis exige autenticação e retorna somente id, nome e e-mail de administradores ativos. PUT /api/tickets/:id aceita responsavel_id como UUID de administrador ativo ou null para remover a atribuição, junto de status e prioridade. Administradores inativos, agentes e usuários inexistentes são rejeitados. As consultas de chamados incluem responsavel_id e o objeto responsavel com id, nome, e-mail, perfil e situação, sem dados de autenticação.
+
+### Retorno da conexão Outlook e erro 404
+
+FRONTEND_URL, no projeto **Backend** da Vercel, deve apontar para o domínio ativo do portal. Se houver várias origens separadas por vírgula para CORS, a primeira é usada como destino canônico do retorno OAuth. Use a origem do frontend, sem caminho de API; MICROSOFT_REDIRECT_URI continua apontando para o callback do backend registrado no Microsoft Entra.
+
+O callback salva a conexão e redireciona para a raiz do frontend com apenas microsoft=connected ou microsoft=error. O Angular restaura a sessão e abre /settings/integrations internamente; a mensagem de sucesso depende também do status consultado na API. Retornos antigos diretamente para /settings/integrations continuam compatíveis.
+
+Se a Vercel retornar DEPLOYMENT_NOT_FOUND inclusive para a raiz, o domínio configurado está indisponível. Atualize FRONTEND_URL para a URL atual do portal e faça um novo deploy do backend para aplicar a variável. Alterar somente as rotas Angular não recupera um domínio de deploy removido. Os rewrites do Frontend/vercel.json também devem estar presentes no deploy do frontend para permitir recarregar links internos.
+
+Para o portal atual, configure no projeto Backend da Vercel:
+
+```env
+FRONTEND_URL=https://gestao-de-chamados-centauro.vercel.app
+```
+
+O endereço anterior gestao-de-chamados-ashy.vercel.app está indisponível. Após salvar a variável no ambiente usado pelo portal (Production), faça um novo deploy do backend. Não altere MICROSOFT_REDIRECT_URI para o frontend.
