@@ -6,6 +6,7 @@ import { errorMiddleware } from "./middlewares/error.middleware.js";
 import authRoutes from "./routes/auth.routes.js";
 import microsoftIntegrationRoutes from "./routes/microsoft-integration.routes.js";
 import signatureRoutes from "./routes/signature.routes.js";
+import signatureRequestRoutes from "./routes/signature-request.routes.js";
 import ticketRoutes from "./routes/ticket.routes.js";
 import webhookRoutes from "./routes/webhook.routes.js";
 // [TEMPORÁRIO] Rota de diagnóstico Microsoft Graph — remover após análise
@@ -66,7 +67,7 @@ app.use(
 app.use(cookieParser());
 
 // Body parser com limite seguro de tamanho
-app.use(express.json({ limit: "100kb" }));
+app.use(express.json({ limit: "1mb" }));
 
 // Prevenção de cache em endpoints de dados sensíveis e privados
 app.use((req, res, next) => {
@@ -74,6 +75,7 @@ app.use((req, res, next) => {
     req.path.startsWith("/api/tickets") ||
     req.path.startsWith("/api/auth") ||
     req.path.startsWith("/api/profile") ||
+    req.path.startsWith("/api/signatures") ||
     req.path.startsWith("/api/integrations/microsoft")
   ) {
     res.setHeader(
@@ -95,6 +97,7 @@ app.get("/health", (_req, res) => {
 app.use("/api/auth", authRoutes);
 app.use("/api/integrations/microsoft", microsoftIntegrationRoutes);
 app.use("/api/profile", signatureRoutes);
+app.use("/api/signatures", signatureRequestRoutes);
 app.use("/api/tickets", ticketRoutes);
 app.use("/api/webhooks", webhookRoutes);
 // [TEMPORÁRIO] Diagnóstico Microsoft Graph — remover após análise

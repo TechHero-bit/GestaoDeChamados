@@ -76,6 +76,19 @@
     </a>
     <a
       class="nav-item"
+      routerLink="/signatures"
+      routerLinkActive="nav-item-active"
+      [routerLinkActiveOptions]="{ exact: true }"
+      (click)="closeSidebar.emit()"
+      title="Assinaturas corporativas"
+    >
+      <span class="material-symbols-outlined shrink-0 text-[21px]" aria-hidden="true"
+        >draw</span
+      >
+      <span [class.md:hidden]="collapsed()">Assinaturas</span>
+    </a>
+    <a
+      class="nav-item"
       routerLink="/settings"
       routerLinkActive="nav-item-active"
       (click)="closeSidebar.emit()"

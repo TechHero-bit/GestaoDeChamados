@@ -9,6 +9,7 @@ import {
   prepareIncomingAttachments,
 } from "../services/incoming-attachment.service.js";
 import * as ticketService from "../services/ticket.service.js";
+import { processOutlookOnboarding } from "../services/signature-request.service.js";
 
 function validationError(res, result, message = "Payload inválido.") {
   return res.status(400).json({
@@ -73,6 +74,13 @@ export async function receberEmailOutlook(req, res, next) {
         })
       : [];
 
+    const signatureResult = await processOutlookOnboarding({
+      payload: dados,
+      ticket: resultadoEntrada.ticket,
+      message: resultadoEntrada.message,
+      attachments,
+    });
+
     return res.status(resultadoEntrada.duplicate ? 200 : 201).json({
       success: true,
       duplicate: resultadoEntrada.duplicate,
@@ -84,6 +92,12 @@ export async function receberEmailOutlook(req, res, next) {
       ticket_id: resultadoEntrada.ticket.id,
       message_id: dados.message_id,
       attachments,
+      ...(signatureResult
+        ? {
+            signature_request_id: signatureResult.request.id,
+            signature_request_duplicate: signatureResult.duplicate,
+          }
+        : {}),
     });
   } catch (error) {
     next(error);

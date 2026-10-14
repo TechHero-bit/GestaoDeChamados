@@ -92,7 +92,8 @@ export const webhookPayloadSchema = z.object({
         const lower = val.toLowerCase();
         return (
           lower.includes("(chamado)") ||
-          lower.includes("centauro / interno: chamado -")
+          lower.includes("centauro / interno: chamado -") ||
+          lower.includes("centauro/interno: chamado -")
         );
       },
       {
@@ -105,6 +106,10 @@ export const webhookPayloadSchema = z.object({
     .string({ required_error: "corpo_mensagem é obrigatório." })
     .trim()
     .min(1, "corpo_mensagem não pode ser vazio."),
+
+  // Opcional e retrocompatível. Quando informado pelo Power Automate, permite
+  // correlacionar Content-ID e posição das imagens no HTML com mais precisão.
+  corpo_html: z.string().max(500_000).optional(),
 
   data_recebimento: z
     .string({ required_error: "data_recebimento é obrigatório." })

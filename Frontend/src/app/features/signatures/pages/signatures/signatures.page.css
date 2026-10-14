@@ -1,0 +1,80 @@
+.signature-status {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 0.2rem 0.5rem;
+  font-size: 0.65rem;
+  font-weight: 700;
+  line-height: 1.1;
+  white-space: nowrap;
+}
+
+.status-generated {
+  background: var(--color-success-soft);
+  color: var(--color-success);
+}
+
+.status-pending {
+  background: var(--color-accent-soft);
+  color: var(--color-accent);
+}
+
+.status-review {
+  background: var(--color-warning-soft);
+  color: var(--color-warning);
+}
+
+.candidate-card {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.75rem;
+  border: 1px solid var(--color-border);
+  border-radius: 0.75rem;
+  padding: 0.65rem;
+  background: var(--color-surface);
+  transition: border-color 150ms ease, background-color 150ms ease;
+}
+
+.candidate-card:not(:disabled):hover {
+  border-color: var(--color-accent);
+  background: var(--color-accent-soft);
+}
+
+.candidate-card:disabled {
+  cursor: not-allowed;
+  opacity: 0.65;
+}
+
+.candidate-selected {
+  border-color: var(--color-success);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--color-success) 18%, transparent);
+}
+
+.candidate-image {
+  display: flex;
+  width: 4.25rem;
+  height: 4.25rem;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--color-surface-elevated);
+}
+
+.candidate-image img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.signature-canvas {
+  display: block;
+  width: 768px;
+  max-width: none;
+  height: 200px;
+  border-radius: 0.5rem;
+  background: #fff;
+  box-shadow: var(--shadow-card);
+}

@@ -125,6 +125,12 @@ test("GET /api/tickets sem autenticação retorna 401", async () => {
   assert.match(body.message, /não autenticado/i);
 });
 
+test("GET /api/signatures sem autenticação retorna 401", async () => {
+  const response = await fetch(`${baseUrl}/api/signatures`);
+  assert.equal(response.status, 401);
+  assert.equal((await response.json()).success, false);
+});
+
 test("GET /api/tickets/:id sem autenticação retorna 401", async () => {
   const response = await fetch(
     `${baseUrl}/api/tickets/00000000-0000-4000-8000-000000000001`,

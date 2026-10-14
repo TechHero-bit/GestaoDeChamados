@@ -272,3 +272,13 @@ O campo Responsável, em Propriedades, salva automaticamente um administrador at
 ## Dashboard Kanban e preparação Planner
 
 O dashboard inclui um quadro interativo com arrastar e soltar e operação por teclado. Veja [implementação e homologação](docs/kanban.md) e [preparação da sincronização Planner](docs/planner-sync.md). A sincronização permanece desativada e o SQL em database/planned não deve ser aplicado nesta etapa.
+
+## Assinaturas corporativas
+
+O módulo de onboarding identifica o assunto oficial, extrai dados do
+colaborador, separa fotografias de imagens da assinatura do remetente e gera o
+PNG oficial com histórico privado. Consulte a
+[documentação de integração e ativação](docs/signatures.md).
+
+Antes de publicar, revise e execute manualmente a migration 012. Nenhuma
+migration ou alteração de produção é executada automaticamente.

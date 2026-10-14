@@ -55,6 +55,14 @@ export const routes: Routes = [
           ),
       },
       {
+        path: 'signatures',
+        title: 'Assinaturas | SmartDesk',
+        loadComponent: () =>
+          import('./features/signatures/pages/signatures/signatures.page').then(
+            (module) => module.SignaturesPage,
+          ),
+      },
+      {
         path: 'settings',
         loadComponent: () =>
           import('./features/settings/layout/settings-layout/settings-layout.component').then(

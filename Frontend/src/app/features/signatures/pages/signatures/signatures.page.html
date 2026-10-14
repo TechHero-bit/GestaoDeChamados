@@ -1,0 +1,365 @@
+<main class="app-page page-enter">
+  <div class="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
+    <div>
+      <p class="eyebrow mb-1.5">Identidade corporativa</p>
+      <h1 class="page-title">Assinaturas</h1>
+      <p class="mt-1 text-sm text-text-secondary">
+        Revise os dados recebidos no onboarding e gere a assinatura oficial em PNG.
+      </p>
+    </div>
+    <div class="flex items-center gap-2">
+      <span class="rounded-lg border border-border bg-surface px-3 py-2 text-xs text-text-muted">
+        {{ total() }} solicitações
+      </span>
+      <button class="secondary-button" type="button" (click)="loadList(selected()?.id)">
+        <span class="material-symbols-outlined text-lg" aria-hidden="true">refresh</span>
+        Atualizar
+      </button>
+    </div>
+  </div>
+
+  @if (error()) {
+    <div class="feedback feedback-enter mb-3 border-danger/30 bg-danger-soft text-on-error-container" role="alert">
+      <span class="material-symbols-outlined text-danger" aria-hidden="true">error</span>
+      <p class="min-w-0 flex-1">{{ error() }}</p>
+      <button class="icon-button" type="button" aria-label="Fechar aviso" (click)="error.set('')">
+        <span class="material-symbols-outlined text-lg" aria-hidden="true">close</span>
+      </button>
+    </div>
+  }
+
+  @if (success()) {
+    <div class="feedback feedback-enter mb-3 border-success/30 bg-success-soft text-text" role="status">
+      <span class="material-symbols-outlined text-success" aria-hidden="true">check_circle</span>
+      <p class="min-w-0 flex-1">{{ success() }}</p>
+      <button class="icon-button" type="button" aria-label="Fechar confirmação" (click)="success.set('')">
+        <span class="material-symbols-outlined text-lg" aria-hidden="true">close</span>
+      </button>
+    </div>
+  }
+
+  <div class="grid items-start gap-3 xl:grid-cols-[330px_minmax(0,1fr)]">
+    <section class="card overflow-hidden" aria-labelledby="signature-queue-title">
+      <div class="card-header flex-col items-stretch gap-3">
+        <div class="flex items-center justify-between gap-3">
+          <div>
+            <h2 id="signature-queue-title" class="font-semibold text-text">Solicitações</h2>
+            <p class="mt-0.5 text-xs text-text-muted">Onboardings identificados no Outlook</p>
+          </div>
+          <span class="material-symbols-outlined text-accent" aria-hidden="true">mark_email_unread</span>
+        </div>
+        <div class="grid gap-2 sm:grid-cols-2 xl:grid-cols-1">
+          <label class="sr-only" for="signature-search">Buscar solicitação</label>
+          <input
+            id="signature-search"
+            class="field-control"
+            type="search"
+            placeholder="Buscar nome, função ou e-mail"
+            [(ngModel)]="search"
+            (keyup.enter)="loadList()"
+          />
+          <label class="sr-only" for="signature-status">Filtrar por status</label>
+          <select
+            id="signature-status"
+            class="field-control"
+            [(ngModel)]="statusFilter"
+            (ngModelChange)="loadList()"
+          >
+            <option value="">Todos os status</option>
+            <option value="Pendente">Pendente</option>
+            <option value="Revisão necessária">Revisão necessária</option>
+            <option value="Gerada">Gerada</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="max-h-[calc(100vh-290px)] min-h-64 overflow-y-auto p-2">
+        @if (loading()) {
+          <div class="space-y-2 p-1" aria-label="Carregando solicitações">
+            @for (row of [1, 2, 3, 4]; track row) {
+              <div class="skeleton h-24 rounded-lg"></div>
+            }
+          </div>
+        } @else if (requests().length === 0) {
+          <div class="flex min-h-56 flex-col items-center justify-center px-5 text-center">
+            <span class="material-symbols-outlined mb-2 text-4xl text-text-muted" aria-hidden="true">
+              ink_pen
+            </span>
+            <p class="font-semibold text-text">Nenhuma solicitação encontrada</p>
+            <p class="mt-1 text-sm text-text-secondary">
+              Novos onboardings aparecerão aqui após o webhook do Outlook.
+            </p>
+          </div>
+        } @else {
+          <div class="space-y-1.5">
+            @for (request of requests(); track request.id) {
+              <button
+                type="button"
+                class="w-full rounded-lg border p-3 text-left transition-colors"
+                [class.border-accent]="selected()?.id === request.id"
+                [class.bg-accent-soft]="selected()?.id === request.id"
+                [class.border-transparent]="selected()?.id !== request.id"
+                [class.hover:bg-surface-elevated]="selected()?.id !== request.id"
+                (click)="selectRequest(request.id)"
+              >
+                <div class="flex items-start justify-between gap-2">
+                  <p class="min-w-0 truncate text-sm font-semibold text-text">
+                    {{ request.employee_name || 'Nome não identificado' }}
+                  </p>
+                  <span [class]="'signature-status shrink-0 ' + statusTone(request.status)">
+                    {{ request.status }}
+                  </span>
+                </div>
+                <p class="mt-1 truncate text-xs text-text-secondary">
+                  {{ request.job_title || 'Função pendente' }}
+                </p>
+                <p class="mt-2 text-[11px] text-text-muted">{{ formatDate(request.created_at) }}</p>
+              </button>
+            }
+          </div>
+        }
+      </div>
+    </section>
+
+    @if (selected(); as request) {
+      <div class="space-y-3">
+        <section class="card overflow-hidden" aria-labelledby="signature-data-title">
+          <div class="card-header flex-wrap justify-between">
+            <div class="flex items-center gap-3">
+              <span class="flex size-9 items-center justify-center rounded-lg bg-accent-soft text-accent">
+                <span class="material-symbols-outlined text-xl" aria-hidden="true">badge</span>
+              </span>
+              <div>
+                <h2 id="signature-data-title" class="font-semibold text-text">Dados do colaborador</h2>
+                <p class="mt-0.5 text-xs text-text-muted">
+                  Origem: {{ request.source_sender_email }}
+                </p>
+              </div>
+            </div>
+            <span [class]="'signature-status ' + statusTone(request.status)">{{ request.status }}</span>
+          </div>
+
+          @if (request.extraction_warnings.length > 0 || request.email_conflict) {
+            <div class="mx-4 mt-4 rounded-lg border border-warning/30 bg-warning-soft p-3 text-sm text-text">
+              <div class="flex gap-2">
+                <span class="material-symbols-outlined text-warning" aria-hidden="true">fact_check</span>
+                <div>
+                  <p class="font-semibold">Revise antes de gerar</p>
+                  <ul class="mt-1 list-disc space-y-0.5 pl-4 text-xs text-text-secondary">
+                    @for (warning of request.extraction_warnings; track warning) {
+                      <li>{{ warning }}</li>
+                    }
+                    @if (request.email_conflict) {
+                      <li>O e-mail informado já existe em outra solicitação ou usuário.</li>
+                    }
+                  </ul>
+                </div>
+              </div>
+            </div>
+          }
+
+          <form class="grid gap-3 p-4 sm:grid-cols-2" (ngSubmit)="save()">
+            <div>
+              <label class="field-label" for="employee-name">Nome completo</label>
+              <input
+                id="employee-name"
+                class="field-control"
+                name="employeeName"
+                required
+                [(ngModel)]="form.employee_name"
+                (ngModelChange)="schedulePreview()"
+              />
+            </div>
+            <div>
+              <label class="field-label" for="job-title">Função</label>
+              <input
+                id="job-title"
+                class="field-control"
+                name="jobTitle"
+                required
+                [(ngModel)]="form.job_title"
+                (ngModelChange)="schedulePreview()"
+              />
+            </div>
+            <div>
+              <label class="field-label" for="phone">Telefone</label>
+              <input
+                id="phone"
+                class="field-control"
+                name="phone"
+                inputmode="tel"
+                required
+                [(ngModel)]="form.phone"
+                (ngModelChange)="schedulePreview()"
+              />
+            </div>
+            <div>
+              <label class="field-label" for="corporate-email">E-mail corporativo</label>
+              <input
+                id="corporate-email"
+                class="field-control"
+                name="corporateEmail"
+                type="email"
+                required
+                [(ngModel)]="form.corporate_email"
+                (ngModelChange)="schedulePreview()"
+              />
+            </div>
+            <div class="flex items-center justify-between gap-3 sm:col-span-2">
+              <p class="text-xs text-text-muted">
+                Alterações após uma geração deixam a solicitação pendente de uma nova versão.
+              </p>
+              <button class="secondary-button" type="submit" [disabled]="saving()">
+                <span class="material-symbols-outlined text-lg" aria-hidden="true">save</span>
+                {{ saving() ? 'Salvando…' : 'Salvar dados' }}
+              </button>
+            </div>
+          </form>
+        </section>
+
+        <section class="card overflow-hidden" aria-labelledby="signature-photo-title">
+          <div class="card-header flex-wrap justify-between">
+            <div>
+              <h2 id="signature-photo-title" class="font-semibold text-text">Fotografia</h2>
+              <p class="mt-0.5 text-xs text-text-muted">
+                Imagens da assinatura do remetente são classificadas e nunca selecionadas com baixa confiança.
+              </p>
+            </div>
+            <label class="secondary-button cursor-pointer">
+              <span class="material-symbols-outlined text-lg" aria-hidden="true">upload</span>
+              Enviar outra foto
+              <input
+                class="sr-only"
+                type="file"
+                accept="image/png,image/jpeg,image/webp"
+                (change)="uploadPhoto($event)"
+              />
+            </label>
+          </div>
+
+          @if (request.images.length === 0) {
+            <div class="p-4 text-sm text-text-secondary">
+              Nenhuma imagem candidata foi encontrada no e-mail. Envie a fotografia manualmente.
+            </div>
+          } @else {
+            <div class="grid gap-3 p-4 sm:grid-cols-2 lg:grid-cols-3">
+              @for (image of request.images; track image.attachment_id) {
+                <button
+                  type="button"
+                  class="candidate-card"
+                  [class.candidate-selected]="request.photo_attachment_id === image.attachment_id"
+                  [disabled]="image.processing_status !== 'Disponivel' || saving()"
+                  (click)="selectCandidate(image.attachment_id)"
+                >
+                  <div class="candidate-image">
+                    @if (candidateUrls()[image.attachment_id]) {
+                      <img [src]="candidateUrls()[image.attachment_id]" [alt]="'Prévia de ' + image.file_name" />
+                    } @else {
+                      <span class="material-symbols-outlined text-3xl text-text-muted" aria-hidden="true">
+                        {{ image.processing_status === 'Pendente' ? 'hourglass_top' : 'broken_image' }}
+                      </span>
+                    }
+                  </div>
+                  <div class="min-w-0 flex-1 text-left">
+                    <p class="truncate text-xs font-semibold text-text">{{ image.file_name }}</p>
+                    <p class="mt-0.5 text-[11px] text-text-muted">
+                      {{ formatBytes(image.file_size) }} · confiança {{ (image.confidence * 100).toFixed(0) }}%
+                    </p>
+                    <p class="mt-1 text-[11px] text-text-secondary">
+                      {{
+                        image.classification === 'assinatura_remetente'
+                          ? 'Provável elemento do remetente'
+                          : image.classification === 'provavel_foto'
+                            ? 'Provável fotografia'
+                            : 'Seleção manual recomendada'
+                      }}
+                    </p>
+                  </div>
+                  @if (request.photo_attachment_id === image.attachment_id) {
+                    <span class="material-symbols-outlined text-success" aria-label="Selecionada">check_circle</span>
+                  }
+                </button>
+              }
+            </div>
+          }
+        </section>
+
+        <section class="card overflow-hidden" aria-labelledby="signature-preview-title">
+          <div class="card-header flex-wrap justify-between">
+            <div>
+              <h2 id="signature-preview-title" class="font-semibold text-text">Pré-visualização oficial</h2>
+              <p class="mt-0.5 text-xs text-text-muted">
+                Modelo Centauro original · 768 × 200 px
+              </p>
+            </div>
+            <button
+              class="primary-button"
+              type="button"
+              [disabled]="!readyToGenerate()"
+              (click)="generateAndDownload()"
+            >
+              <span class="material-symbols-outlined text-lg" aria-hidden="true">download</span>
+              {{ generating() ? 'Gerando…' : 'Gerar e baixar PNG' }}
+            </button>
+          </div>
+          <div class="overflow-x-auto bg-surface-elevated p-4">
+            <canvas
+              #signatureCanvas
+              class="signature-canvas"
+              width="768"
+              height="200"
+              role="img"
+              aria-label="Prévia da assinatura corporativa"
+            ></canvas>
+          </div>
+          @if (!readyToGenerate()) {
+            <p class="border-t border-border-subtle px-4 py-3 text-xs text-text-muted">
+              Preencha os quatro campos, resolva duplicidades e selecione uma fotografia para habilitar a geração.
+            </p>
+          }
+        </section>
+
+        <section class="card overflow-hidden" aria-labelledby="signature-history-title">
+          <div class="card-header">
+            <span class="material-symbols-outlined text-accent" aria-hidden="true">history</span>
+            <div>
+              <h2 id="signature-history-title" class="font-semibold text-text">Histórico</h2>
+              <p class="mt-0.5 text-xs text-text-muted">Versões geradas desta solicitação</p>
+            </div>
+          </div>
+          @if (request.history.length === 0) {
+            <p class="p-4 text-sm text-text-secondary">Nenhuma versão foi gerada ainda.</p>
+          } @else {
+            <div class="divide-y divide-border-subtle">
+              @for (artifact of request.history; track artifact.id) {
+                <div class="flex items-center gap-3 px-4 py-3">
+                  <span class="flex size-9 items-center justify-center rounded-lg bg-success-soft text-success">
+                    <span class="material-symbols-outlined text-xl" aria-hidden="true">image</span>
+                  </span>
+                  <div class="min-w-0 flex-1">
+                    <p class="truncate text-sm font-medium text-text">{{ artifact.file_name }}</p>
+                    <p class="text-xs text-text-muted">
+                      {{ formatDate(artifact.created_at) }} · {{ formatBytes(artifact.file_size) }}
+                    </p>
+                  </div>
+                  <a class="secondary-button" [href]="artifactUrl(artifact.id)">
+                    <span class="material-symbols-outlined text-lg" aria-hidden="true">download</span>
+                    Baixar
+                  </a>
+                </div>
+              }
+            </div>
+          }
+        </section>
+      </div>
+    } @else {
+      <section class="card flex min-h-[420px] flex-col items-center justify-center p-8 text-center">
+        <span class="material-symbols-outlined mb-3 text-5xl text-text-muted" aria-hidden="true">draw</span>
+        <h2 class="font-semibold text-text">Selecione uma solicitação</h2>
+        <p class="mt-1 max-w-sm text-sm text-text-secondary">
+          Os dados, as imagens candidatas e o histórico serão exibidos aqui.
+        </p>
+      </section>
+    }
+  </div>
+</main>
