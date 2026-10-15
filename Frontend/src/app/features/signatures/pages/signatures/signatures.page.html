@@ -288,6 +288,11 @@
               }
             </div>
           }
+          @if (photoWarning()) {
+            <p class="border-t border-warning/20 bg-warning-soft px-4 py-3 text-xs text-warning" role="alert">
+              {{ photoWarning() }}
+            </p>
+          }
         </section>
 
         <section class="card overflow-hidden" aria-labelledby="signature-preview-title">
@@ -298,15 +303,26 @@
                 Modelo Centauro · exportação 768 × 200 px
               </p>
             </div>
-            <button
-              class="primary-button"
-              type="button"
-              [disabled]="!readyToGenerate()"
-              (click)="generateAndDownload()"
-            >
-              <span class="material-symbols-outlined text-lg" aria-hidden="true">download</span>
-              {{ generating() ? 'Gerando…' : 'Gerar e baixar PNG' }}
-            </button>
+            <div class="flex flex-wrap gap-2">
+              <button
+                class="secondary-button"
+                type="button"
+                [disabled]="!readyToDownloadPreview()"
+                (click)="downloadPreview()"
+              >
+                <span class="material-symbols-outlined text-lg" aria-hidden="true">preview</span>
+                {{ previewDownloading() ? 'Baixando prévia…' : 'Baixar prévia de teste' }}
+              </button>
+              <button
+                class="primary-button"
+                type="button"
+                [disabled]="!readyToGenerate()"
+                (click)="generateAndDownload()"
+              >
+                <span class="material-symbols-outlined text-lg" aria-hidden="true">download</span>
+                {{ generating() ? 'Gerando…' : 'Gerar e baixar PNG' }}
+              </button>
+            </div>
           </div>
           <div class="overflow-x-auto bg-surface-elevated p-4">
             <canvas
@@ -320,7 +336,16 @@
           </div>
           @if (generationBlockedReason()) {
             <p class="border-t border-border-subtle px-4 py-3 text-xs text-text-muted" role="status">
-              {{ generationBlockedReason() }}
+              Geração oficial indisponível: {{ generationBlockedReason() }}
+            </p>
+          }
+          @if (previewBlockedReason()) {
+            <p class="border-t border-border-subtle px-4 py-3 text-xs text-text-muted" role="status">
+              Prévia de teste indisponível: {{ previewBlockedReason() }}
+            </p>
+          } @else {
+            <p class="border-t border-border-subtle px-4 py-3 text-xs text-text-muted">
+              A prévia de teste não é salva no histórico nem substitui a geração oficial.
             </p>
           }
         </section>

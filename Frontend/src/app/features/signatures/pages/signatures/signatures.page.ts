@@ -47,15 +47,33 @@ export class SignaturesPage implements OnInit, AfterViewInit, OnDestroy {
   readonly loadingDetail = signal(false);
   readonly saving = signal(false);
   readonly generating = signal(false);
+  readonly previewDownloading = signal(false);
   readonly photoReady = signal(false);
   readonly photoLoading = signal(false);
+  readonly photoWarning = signal('');
   readonly templateReady = signal(false);
   readonly candidateErrors = signal<Record<string, string>>({});
   readonly error = signal('');
   readonly success = signal('');
   readonly total = signal(0);
   readyToGenerate(): boolean {
-    return !this.generationBlockedReason() && !this.saving() && !this.generating();
+    return !this.generationBlockedReason() && !this.saving() && !this.generating() && !this.previewDownloading();
+  }
+
+  readyToDownloadPreview(): boolean {
+    return !this.previewBlockedReason() && !this.saving() && !this.generating() && !this.previewDownloading();
+  }
+
+  previewBlockedReason(): string {
+    if (!this.selected()) return 'Selecione uma solicitação.';
+    if (!this.form.employee_name.trim() || !this.form.job_title.trim() ||
+        !this.form.phone.trim() || !this.form.corporate_email.trim()) {
+      return 'Preencha os quatro campos para testar a imagem.';
+    }
+    if (this.photoLoading()) return 'Carregando a fotografia para a prévia de teste…';
+    if (!this.photoReady()) return 'Selecione ou envie uma fotografia válida para testar a imagem.';
+    if (!this.templateReady()) return 'Carregando o modelo visual da assinatura…';
+    return '';
   }
 
   generationBlockedReason(): string {
@@ -212,28 +230,36 @@ export class SignaturesPage implements OnInit, AfterViewInit, OnDestroy {
       );
       this.applyRequest(saved, false);
       await this.drawPreview();
-      const canvas = this.canvasRef?.nativeElement;
-      if (!canvas) throw new Error('A prévia da assinatura não está disponível.');
-      const png = await new Promise<Blob>((resolve, reject) => {
-        canvas.toBlob(
-          (blob) => (blob ? resolve(blob) : reject(new Error('Falha ao exportar o PNG.'))),
-          'image/png',
-        );
-      });
+      const png = await this.exportPreviewPng();
       const result = await firstValueFrom(this.service.generate(saved.id, png));
       this.applyRequest(result.request, false);
       this.refreshListRow(result.request);
-      const url = URL.createObjectURL(png);
-      const anchor = document.createElement('a');
-      anchor.href = url;
-      anchor.download = result.file_name;
-      anchor.click();
-      setTimeout(() => URL.revokeObjectURL(url), 0);
+      this.downloadPng(png, result.file_name);
       this.success.set('Assinatura gerada, baixada e registrada no histórico.');
     } catch (error) {
       this.error.set((error as Error).message);
     } finally {
       this.generating.set(false);
+    }
+  }
+
+  async downloadPreview(): Promise<void> {
+    if (!this.readyToDownloadPreview()) return;
+    this.previewDownloading.set(true);
+    this.error.set('');
+    this.success.set('');
+    try {
+      await this.drawPreview();
+      const png = await this.exportPreviewPng();
+      const name = this.form.employee_name.trim().toLowerCase()
+        .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+      this.downloadPng(png, `previa-assinatura-${name || 'teste'}.png`);
+      this.success.set('Prévia de teste baixada. Nenhuma versão foi registrada no histórico.');
+    } catch (error) {
+      this.error.set((error as Error).message);
+    } finally {
+      this.previewDownloading.set(false);
     }
   }
 
@@ -305,6 +331,7 @@ export class SignaturesPage implements OnInit, AfterViewInit, OnDestroy {
     this.photoImage = null;
     this.photoReady.set(false);
     this.photoLoading.set(false);
+    this.photoWarning.set('');
     this.candidateErrors.set({});
     this.drawBlankCanvas();
   }
@@ -316,6 +343,7 @@ export class SignaturesPage implements OnInit, AfterViewInit, OnDestroy {
     this.candidateErrors.set({});
     this.photoImage = null;
     this.photoReady.set(false);
+    this.photoWarning.set('');
     this.photoLoading.set(Boolean(request.photo_attachment_id || request.has_manual_photo));
     this.success.set('');
 
@@ -365,6 +393,11 @@ export class SignaturesPage implements OnInit, AfterViewInit, OnDestroy {
             this.photoImage = loaded;
             this.photoReady.set(true);
             this.photoLoading.set(false);
+            this.photoWarning.set(
+              loaded.naturalWidth / loaded.naturalHeight > 1.7
+                ? 'A imagem selecionada é muito larga para um retrato e pode ser uma assinatura de e-mail inteira. Confira a prévia ou envie uma foto de rosto.'
+                : '',
+            );
             this.error.set('');
             await this.drawPreview();
             if (photoSuccessMessage) this.success.set(photoSuccessMessage);
@@ -480,6 +513,26 @@ export class SignaturesPage implements OnInit, AfterViewInit, OnDestroy {
     const canvas = this.canvasRef?.nativeElement;
     const context = canvas?.getContext('2d');
     if (canvas && context) context.clearRect(0, 0, canvas.width, canvas.height);
+  }
+
+  private exportPreviewPng(): Promise<Blob> {
+    const canvas = this.canvasRef?.nativeElement;
+    if (!canvas) return Promise.reject(new Error('A prévia da assinatura não está disponível.'));
+    return new Promise<Blob>((resolve, reject) => {
+      canvas.toBlob(
+        (blob) => (blob ? resolve(blob) : reject(new Error('Falha ao exportar o PNG.'))),
+        'image/png',
+      );
+    });
+  }
+
+  private downloadPng(png: Blob, fileName: string): void {
+    const url = URL.createObjectURL(png);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = fileName;
+    anchor.click();
+    setTimeout(() => URL.revokeObjectURL(url), 0);
   }
 
   private loadImage(url: string): Promise<HTMLImageElement> {

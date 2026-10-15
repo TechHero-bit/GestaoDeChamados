@@ -123,6 +123,14 @@ O botão de geração informa a condição que ainda falta. A API serve as fotos
 pela rota autenticada, lendo os buckets privados no servidor. O histórico
 continua imutável e a assinatura pessoal dos administradores fica isolada.
 
+`Baixar prévia de teste` exporta o canvas localmente, sem gravar artefato e
+sem exigir unicidade do e-mail. Requer os quatro campos preenchidos, o modelo
+carregado e uma fotografia legível. `Gerar e baixar PNG` continua sujeito à
+verificação de duplicidade e registra a versão no histórico. Uma imagem muito
+larga gera aviso de possível assinatura de e-mail; os candidatos são exibidos
+inteiros para facilitar a escolha de um retrato verdadeiro. Esse aviso visual
+não substitui a revisão humana da fotografia.
+
 Para homologar um anexo vindo do Flow, confira a execução: o PUT da ação
 `HTTP_1` deve terminar com sucesso, seguido do POST da ação `HTTP_2` em
 `/api/webhooks/outlook/attachments/complete` com HTTP 200 e
