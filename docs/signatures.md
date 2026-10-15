@@ -85,10 +85,14 @@ e as assinaturas pessoais dos administradores não são modificadas.
 
 ## Modelo visual
 
-O arquivo original foi copiado sem alteração para
-`Frontend/public/assets/signatures/modelo-centauro-17.png`. O canvas usa o PNG
-como fundo e substitui somente nome, função, telefone, e-mail e o círculo da
-fotografia. A exportação preserva 768 × 200 px.
+O arquivo original permanece sem alteração em
+`Frontend/public/assets/signatures/modelo-centauro-17.png`. Sua dimensão real
+é **800 × 200 px**. O canvas desenha fundo, foto e textos no mesmo sistema de
+coordenadas do original e reduz toda a composição horizontalmente para a
+exportação exigida pelo módulo, **768 × 200 px**. A faixa gráfica, logotipo,
+ícones, endereço e site continuam provenientes do PNG; apenas foto, nome,
+função, telefone e e-mail são substituídos. A referência
+`MODELO CENTAURO (18).png` também mede 800 × 200 px.
 
 ## Rotas
 
@@ -109,3 +113,24 @@ fotografia. A exportação preserva 768 × 200 px.
 4. Publicar backend e frontend juntos, pois a página depende das novas tabelas.
 5. Enviar um onboarding de teste com foto e assinatura completa do remetente.
 6. Confirmar seleção manual em caso ambíguo e validar o PNG exportado.
+
+## Diagnóstico da fotografia
+
+Em cada item de Fotografia, o portal mostra o estado do anexo recebido
+(Pendente, Disponivel ou Falhou) e o `processing_error` quando existir.
+A seleção só é confirmada visualmente após a foto ser lida e decodificada.
+O botão de geração informa a condição que ainda falta. A API serve as fotos
+pela rota autenticada, lendo os buckets privados no servidor. O histórico
+continua imutável e a assinatura pessoal dos administradores fica isolada.
+
+Para homologar um anexo vindo do Flow, confira a execução: o PUT da ação
+`HTTP_1` deve terminar com sucesso, seguido do POST da ação `HTTP_2` em
+`/api/webhooks/outlook/attachments/complete` com HTTP 200 e
+`data.processing_status = "Disponivel"`. No backend, os logs
+`[INBOUND_ATTACHMENT_COMPLETE]`, `[INBOUND_ATTACHMENT_FAILED]` e
+`[SIGNATURE_PHOTO]` registram somente UUID interno, estado, tamanho e códigos
+de falha; nunca URL assinada, token ou bytes. Se a rota da foto indicar
+`SIGNATURE_PHOTO_UNAVAILABLE`, verifique o estado/erro do anexo. Se indicar
+`SIGNATURE_PHOTO_STORAGE_READ_FAILED`, compare o objeto armazenado com o PUT
+e a confirmação do Flow. Uma foto enviada manualmente ao portal usa o
+bucket privado `AssinaturasColaboradores` e não depende do Flow.

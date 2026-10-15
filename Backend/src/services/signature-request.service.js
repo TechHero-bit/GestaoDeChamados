@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { getSupabase } from "../config/supabase.js";
 import {
-  createIncomingAttachmentDownloadUrl,
+  INCOMING_ATTACHMENT_BUCKET,
   getIncomingAttachmentForTicket,
 } from "./incoming-attachment.service.js";
 import {
@@ -260,7 +260,7 @@ export async function getSignatureRequest(
     supabase
       .from("signature_request_images")
       .select(
-        "id,attachment_id,position_index,score,confidence,classification,reasons,ticket_message_attachments(file_name,content_type,file_size,is_inline,content_id,processing_status)",
+        "id,attachment_id,position_index,score,confidence,classification,reasons,ticket_message_attachments(file_name,content_type,file_size,is_inline,content_id,processing_status,processing_error,available_at)",
       )
       .eq("signature_request_id", id)
       .order("score", { ascending: false }),
@@ -288,6 +288,8 @@ export async function getSignatureRequest(
       is_inline: attachment?.is_inline === true,
       content_id: attachment?.content_id || null,
       processing_status: attachment?.processing_status || "Falhou",
+      processing_error: attachment?.processing_error || null,
+      available_at: attachment?.available_at || null,
     }),
   );
   return toPublicRequest(request, publicImages, artifacts || []);
@@ -333,16 +335,18 @@ export async function updateSignatureRequest(
           400,
         );
       }
-      if (
-        candidate.ticket_message_attachments?.processing_status !==
-        "Disponivel"
-      ) {
-        throw serviceError(
-          "selecionar uma fotografia que ainda não está disponível",
-          null,
-          409,
-        );
+      if (candidate.ticket_message_attachments?.processing_status !== "Disponivel") {
+        throw await unavailableIncomingPhoto(supabase, selectedAttachment);
       }
+      const attachment = await getIncomingAttachmentForTicket(
+        { ticketId: current.source_ticket_id, attachmentId: selectedAttachment },
+        { supabase },
+      );
+      if (!attachment) throw await unavailableIncomingPhoto(supabase, selectedAttachment);
+      await downloadSignatureImage(
+        supabase, INCOMING_ATTACHMENT_BUCKET, attachment.storage_path,
+        attachment.content_type, { requestId: id, attachmentId: selectedAttachment },
+      );
     }
   }
 
@@ -395,6 +399,7 @@ function assertPhoto(file) {
   if (file.size <= 0 || file.size > MAX_SIGNATURE_IMAGE_BYTES) {
     throw serviceError("validar o tamanho da fotografia", null, 413);
   }
+  assertImageBytes(file.buffer, file.mimetype);
 }
 
 function imageExtension(contentType) {
@@ -448,37 +453,100 @@ export async function uploadSignaturePhoto(
   return getSignatureRequest(id, { supabase });
 }
 
-export async function getSignaturePhotoUrl(
+async function unavailableIncomingPhoto(supabase, attachmentId) {
+  const { data, error } = await supabase
+    .from("ticket_message_attachments")
+    .select("processing_status,processing_error")
+    .eq("id", attachmentId)
+    .maybeSingle();
+  if (error) throw serviceError("verificar o estado da fotografia", error);
+  const status = data?.processing_status || "Ausente";
+  const reason = data?.processing_error || null;
+  console.warn("[SIGNATURE_PHOTO]", JSON.stringify({
+    stage: "attachment_status",
+    attachment_id: attachmentId,
+    status,
+    reason,
+  }));
+  const message = status === "Pendente"
+    ? "O anexo ainda está pendente de confirmação pelo Power Automate. Atualize a solicitação após concluir o fluxo."
+    : status === "Falhou"
+      ? "O upload do anexo falhou" + (reason ? " (" + reason + ")" : "") + ". Envie a foto novamente ou corrija o fluxo."
+      : "A fotografia selecionada não está disponível para esta solicitação.";
+  return Object.assign(new Error(message), {
+    statusCode: 409,
+    publicCode: "SIGNATURE_PHOTO_UNAVAILABLE",
+  });
+}
+
+function assertImageBytes(buffer, contentType) {
+  const valid = contentType === "image/png"
+    ? buffer.subarray(0, 8).equals(Buffer.from("89504e470d0a1a0a", "hex"))
+    : contentType === "image/jpeg"
+      ? buffer.length >= 3 && buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff
+      : contentType === "image/webp"
+        ? buffer.toString("ascii", 0, 4) === "RIFF" && buffer.toString("ascii", 8, 12) === "WEBP"
+        : false;
+  if (!valid) {
+    throw Object.assign(new Error("A fotografia não é um PNG, JPG ou WebP válido. Envie outra imagem."), {
+      statusCode: 415,
+      publicCode: "SIGNATURE_PHOTO_FORMAT_INVALID",
+    });
+  }
+}
+
+async function downloadSignatureImage(supabase, bucket, path, contentType, context) {
+  const { data, error } = await supabase.storage.from(bucket).download(path);
+  if (error || !data) {
+    console.warn("[SIGNATURE_PHOTO]", JSON.stringify({
+      stage: "storage_download",
+      request_id: context.requestId,
+      attachment_id: context.attachmentId || null,
+      error_code: error?.statusCode || error?.status || "DOWNLOAD_FAILED",
+    }));
+    throw Object.assign(new Error(
+      "A imagem foi registrada, mas não pôde ser lida no armazenamento. Confira o PUT e a confirmação do anexo no Power Automate.",
+    ), { statusCode: 409, publicCode: "SIGNATURE_PHOTO_STORAGE_READ_FAILED", cause: error });
+  }
+  const buffer = Buffer.from(await data.arrayBuffer());
+  if (buffer.length === 0 || buffer.length > MAX_SIGNATURE_IMAGE_BYTES) {
+    throw Object.assign(new Error("A fotografia deve ter até 5 MiB. Envie outra imagem."), {
+      statusCode: 413,
+      publicCode: "SIGNATURE_PHOTO_SIZE_INVALID",
+    });
+  }
+  assertImageBytes(buffer, contentType);
+  return { buffer, contentType };
+}
+
+export async function getSignaturePhoto(
   id,
   { supabase = getSupabase() } = {},
 ) {
   const request = await getPrivateRequest(id, supabase);
   if (request.photo_attachment_id) {
     const attachment = await getIncomingAttachmentForTicket(
-      {
-        ticketId: request.source_ticket_id,
-        attachmentId: request.photo_attachment_id,
-      },
+      { ticketId: request.source_ticket_id, attachmentId: request.photo_attachment_id },
       { supabase },
     );
-    if (!attachment) {
-      throw serviceError("abrir a fotografia selecionada", null, 404);
-    }
-    return createIncomingAttachmentDownloadUrl(attachment, { supabase });
+    if (!attachment) throw await unavailableIncomingPhoto(supabase, request.photo_attachment_id);
+    return downloadSignatureImage(
+      supabase, INCOMING_ATTACHMENT_BUCKET, attachment.storage_path,
+      attachment.content_type, { requestId: id, attachmentId: attachment.id },
+    );
   }
   if (!request.photo_storage_path) {
-    throw serviceError("localizar a fotografia selecionada", null, 404);
+    throw Object.assign(new Error("Selecione ou envie uma fotografia."), { statusCode: 404 });
   }
-  const { data, error } = await supabase.storage
-    .from(SIGNATURE_BUCKET)
-    .createSignedUrl(request.photo_storage_path, 60);
-  if (error || !data?.signedUrl) {
-    throw serviceError("autorizar o acesso à fotografia", error);
-  }
-  return data.signedUrl;
+  return downloadSignatureImage(
+    supabase, SIGNATURE_BUCKET, request.photo_storage_path,
+    request.photo_storage_path.endsWith(".png") ? "image/png"
+      : request.photo_storage_path.endsWith(".webp") ? "image/webp" : "image/jpeg",
+    { requestId: id },
+  );
 }
 
-export async function getCandidateImageUrl(
+export async function getCandidateImage(
   id,
   attachmentId,
   { supabase = getSupabase() } = {},
@@ -491,19 +559,17 @@ export async function getCandidateImageUrl(
     .eq("attachment_id", attachmentId)
     .maybeSingle();
   if (error) throw serviceError("validar a imagem candidata", error);
-  if (!candidate) {
-    throw serviceError("localizar a imagem candidata", null, 404);
-  }
+  if (!candidate) throw serviceError("localizar a imagem candidata", null, 404);
   const attachment = await getIncomingAttachmentForTicket(
     { ticketId: request.source_ticket_id, attachmentId },
     { supabase },
   );
-  if (!attachment) {
-    throw serviceError("abrir a imagem candidata", null, 404);
-  }
-  return createIncomingAttachmentDownloadUrl(attachment, { supabase });
+  if (!attachment) throw await unavailableIncomingPhoto(supabase, attachmentId);
+  return downloadSignatureImage(
+    supabase, INCOMING_ATTACHMENT_BUCKET, attachment.storage_path,
+    attachment.content_type, { requestId: id, attachmentId },
+  );
 }
-
 function assertGeneratedPng(file) {
   const signature = file?.buffer?.subarray(0, 8)?.toString("hex");
   if (
@@ -562,6 +628,10 @@ export async function saveGeneratedSignature(
         409,
       );
     }
+    await downloadSignatureImage(
+      supabase, INCOMING_ATTACHMENT_BUCKET, availablePhoto.storage_path,
+      availablePhoto.content_type, { requestId: id, attachmentId: availablePhoto.id },
+    );
   }
 
   const artifactId = randomUUID();
@@ -584,6 +654,7 @@ export async function saveGeneratedSignature(
     corporate_email: request.corporate_email,
     template: "MODELO CENTAURO (17).png",
     dimensions: { width: 768, height: 200 },
+    source_dimensions: { width: 800, height: 200 },
   };
   const { error: artifactError } = await supabase
     .from("signature_artifacts")

@@ -129,9 +129,9 @@ export function classifyImageCandidates(attachments, html) {
   return (attachments || [])
     .map((attachment, positionIndex) => ({ attachment, positionIndex }))
     .filter(({ attachment }) =>
-      String(attachment.content_type || "")
-        .toLowerCase()
-        .startsWith("image/"),
+      ["image/png", "image/jpeg", "image/webp"].includes(
+        String(attachment.content_type || "").toLowerCase(),
+      ),
     )
     .map(({ attachment, positionIndex }) => {
       const reasons = [];

@@ -232,6 +232,7 @@
                 class="sr-only"
                 type="file"
                 accept="image/png,image/jpeg,image/webp"
+                [disabled]="saving()"
                 (change)="uploadPhoto($event)"
               />
             </label>
@@ -266,6 +267,11 @@
                       {{ formatBytes(image.file_size) }} · confiança {{ (image.confidence * 100).toFixed(0) }}%
                     </p>
                     <p class="mt-1 text-[11px] text-text-secondary">
+                      Upload: {{ image.processing_status }}
+                      @if (image.processing_error) { · {{ image.processing_error }} }
+                      @if (candidateErrors()[image.attachment_id]) { · Leitura falhou }
+                    </p>
+                    <p class="mt-1 text-[11px] text-text-secondary">
                       {{
                         image.classification === 'assinatura_remetente'
                           ? 'Provável elemento do remetente'
@@ -289,7 +295,7 @@
             <div>
               <h2 id="signature-preview-title" class="font-semibold text-text">Pré-visualização oficial</h2>
               <p class="mt-0.5 text-xs text-text-muted">
-                Modelo Centauro original · 768 × 200 px
+                Modelo Centauro · exportação 768 × 200 px
               </p>
             </div>
             <button
@@ -312,9 +318,9 @@
               aria-label="Prévia da assinatura corporativa"
             ></canvas>
           </div>
-          @if (!readyToGenerate()) {
-            <p class="border-t border-border-subtle px-4 py-3 text-xs text-text-muted">
-              Preencha os quatro campos, resolva duplicidades e selecione uma fotografia para habilitar a geração.
+          @if (generationBlockedReason()) {
+            <p class="border-t border-border-subtle px-4 py-3 text-xs text-text-muted" role="status">
+              {{ generationBlockedReason() }}
             </p>
           }
         </section>

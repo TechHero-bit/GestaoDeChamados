@@ -103,8 +103,9 @@ export async function abrirFotografia(req, res, next) {
   try {
     const id = parseId(req.params.id, res);
     if (!id) return;
-    const url = await signatureRequestService.getSignaturePhotoUrl(id);
-    return res.redirect(302, url);
+    const image = await signatureRequestService.getSignaturePhoto(id);
+    res.setHeader("Cache-Control", "private, no-store");
+    return res.type(image.contentType).send(image.buffer);
   } catch (error) {
     next(error);
   }
@@ -116,16 +117,13 @@ export async function abrirImagemCandidata(req, res, next) {
     if (!id) return;
     const attachmentId = parseId(req.params.attachmentId, res);
     if (!attachmentId) return;
-    const url = await signatureRequestService.getCandidateImageUrl(
-      id,
-      attachmentId,
-    );
-    return res.redirect(302, url);
+    const image = await signatureRequestService.getCandidateImage(id, attachmentId);
+    res.setHeader("Cache-Control", "private, no-store");
+    return res.type(image.contentType).send(image.buffer);
   } catch (error) {
     next(error);
   }
 }
-
 export async function gerarAssinatura(req, res, next) {
   try {
     const id = parseId(req.params.id, res);

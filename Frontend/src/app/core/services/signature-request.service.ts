@@ -1,6 +1,6 @@
 import { HttpClient, HttpErrorResponse, HttpParams } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
-import { catchError, map, Observable, throwError } from 'rxjs';
+import { catchError, from, map, mergeMap, Observable, throwError } from 'rxjs';
 import { environment } from '../../../environments/environment';
 import {
   CorporateSignatureStatus,
@@ -83,6 +83,20 @@ export class SignatureRequestService {
   }
 
   private handleError(error: HttpErrorResponse): Observable<never> {
+    if (error.error instanceof Blob) {
+      return from(error.error.text()).pipe(
+        mergeMap((body) => {
+          let message = 'Não foi possível carregar a fotografia.';
+          try {
+            const parsed = JSON.parse(body) as { message?: string };
+            if (typeof parsed.message === 'string') message = parsed.message;
+          } catch {
+            // A resposta não era JSON; o motivo genérico permanece.
+          }
+          return throwError(() => new Error(message));
+        }),
+      );
+    }
     const message =
       typeof error.error?.message === 'string'
         ? error.error.message

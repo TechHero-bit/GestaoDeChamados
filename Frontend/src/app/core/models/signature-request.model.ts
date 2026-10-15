@@ -9,6 +9,8 @@ export interface SignatureImageCandidate {
   is_inline: boolean;
   content_id: string | null;
   processing_status: 'Pendente' | 'Disponivel' | 'Falhou';
+  processing_error: string | null;
+  available_at: string | null;
   score: number;
   confidence: number;
   classification: 'provavel_foto' | 'incerta' | 'assinatura_remetente';

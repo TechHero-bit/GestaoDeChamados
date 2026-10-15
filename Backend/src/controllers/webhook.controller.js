@@ -117,6 +117,11 @@ export async function confirmarAnexoOutlook(req, res, next) {
       messageId: result.data.message_id,
       attachmentId: result.data.attachment_id,
     });
+    console.info("[INBOUND_ATTACHMENT_COMPLETE]", JSON.stringify({
+      attachment_id: attachment.id,
+      processing_status: attachment.processing_status,
+      file_size: attachment.file_size,
+    }));
     return res.status(200).json({ success: true, data: attachment });
   } catch (error) {
     next(error);
@@ -134,6 +139,11 @@ export async function falharAnexoOutlook(req, res, next) {
       attachmentId: result.data.attachment_id,
       failureCode: result.data.failure_code,
     });
+    console.warn("[INBOUND_ATTACHMENT_FAILED]", JSON.stringify({
+      attachment_id: attachment.id,
+      processing_status: attachment.processing_status,
+      failure_code: result.data.failure_code,
+    }));
     return res.status(200).json({ success: true, data: attachment });
   } catch (error) {
     next(error);
