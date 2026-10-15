@@ -118,6 +118,7 @@ O bucket mantém o limite configurado no projeto Supabase. Antes de habilitar o 
       "file_name": "contrato.pdf",
       "content_type": "application/pdf",
       "file_size": 1468006,
+      "content_bytes_size": 1467750,
       "is_inline": false,
       "content_id": null
     }
@@ -133,8 +134,19 @@ A resposta inclui `ticket_id`, `message_id` e um item por anexo. Um arquivo pend
 Após o Storage concluir a escrita, o mesmo Flow chama `POST /api/webhooks/outlook/attachments/complete` com:
 
 ```json
-{ "message_id": "<id da mensagem Outlook>", "attachment_id": "<id do Outlook>" }
+{
+  "message_id": "<id da mensagem Outlook>",
+  "attachment_id": "<id do Outlook>",
+  "content_bytes_size": 1467750
+}
 ```
+
+`file_size` continua sendo a propriedade `size` declarada pelo Outlook/Graph.
+`content_bytes_size` é o tamanho do binário efetivamente decodificado de
+`contentBytes`. Quando informado, o backend exige igualdade exata entre esse
+valor e o objeto do Storage. O campo é opcional apenas para transição do Flow;
+sem ele permanece a validação legada, restrita ao pequeno overhead de
+transporte.
 
 Se o upload não puder ser concluído, use um ramo *run after = failed/timed out* para chamar `POST /api/webhooks/outlook/attachments/fail` com os mesmos identificadores e `failure_code` igual a `UPLOAD_FAILED`, `SOURCE_UNAVAILABLE` ou `CONTENT_UNAVAILABLE`. A mensagem permanece na timeline e o anexo é exibido como indisponível; o sistema não afirma que um arquivo inexistente está disponível.
 
@@ -144,10 +156,35 @@ Use o fluxo de entrada já existente, sem criar outro fluxo:
 
 1. Mantenha o gatilho **Quando um novo email é recebido (V3)** e os campos atuais de mensagem.
 2. Para cada item de **Obter anexos (V2)**, chame **Obter anexo (V2)** com o `Message Id` do gatilho e o `Attachment Id` do item. A ação retorna `id`, `name`, `contentType`, `size`, `contentBytes`, `isInline` e `contentId`.
-3. Monte o array `attachments` somente com `id/name/contentType/size/isInline/contentId` e faça o POST inicial acima. Não inclua `contentBytes` nesse POST nem em logs/variáveis persistidas.
+3. Logo após **Obter anexo (V2)**, adicione uma ação **Compor** com o nome
+   `Compor - Tamanho binario` e use exatamente esta expressão (o nome interno
+   da ação de origem deve ser `Obter_anexo_(V2)`):
+
+   ```text
+   length(base64ToBinary(body('Obter_anexo_(V2)')?['contentBytes']))
+   ```
+
+   Monte o array `attachments` com `id/name/contentType/size/isInline/contentId`
+   e `content_bytes_size`, usando neste último exatamente:
+
+   ```text
+   outputs('Compor_-_Tamanho_binario')
+   ```
+
+   Não inclua `contentBytes` no POST inicial nem em logs/variáveis persistidas.
 4. Para cada item retornado pelo backend, associe-o pelo `attachment_id` ao resultado de **Obter anexo (V2)**. Para `standard`, a ação HTTP deve enviar `base64ToBinary(contentBytes)` diretamente à URL assinada. Preserve o header `Content-Type` retornado.
 5. Para `resumable`, configure no **mesmo** fluxo as etapas TUS descritas acima. O conector HTTP genérico precisa conseguir enviar `POST`/`PATCH`, ler `Location`, controlar `Upload-Offset` e produzir chunks binários alinhados a Base64. Se o ambiente do Flow não permitir isso de forma confiável, não envie o arquivo ao backend como fallback: habilite uma etapa/worker compatível com TUS no fluxo existente antes de aceitar anexos maiores que 6 MiB.
-6. Só chame `complete` após a última confirmação do Storage. Configure o ramo de falha conforme a seção anterior.
+6. Só chame o HTTP 08 (`complete`) após a última confirmação do Storage. No
+   body, envie `content_bytes_size` com exatamente
+   `outputs('Compor_-_Tamanho_binario')`. Para TUS, use o mesmo valor em
+   `Upload-Length`; não use a propriedade `size` do Outlook. Configure o ramo
+   de falha conforme a seção anterior.
+
+A migration manual
+`database/migrations/013_preserve_incoming_attachment_sizes.sql` deve ser
+revisada e aplicada antes deste backend. Ela preserva separadamente o tamanho
+de transporte e o tamanho binário real; não altera autenticação, buckets ou
+limites.
 
 A ação HTTP usada para upload direto pode exigir licença Premium do Power Automate. Os anexos nunca passam pela Vercel: o JSON de metadados continua abaixo do parser de 100 KB e o binário vai do Flow para o Supabase Storage. Isso evita o limite de payload da Function.
 

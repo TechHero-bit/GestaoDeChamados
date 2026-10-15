@@ -47,6 +47,7 @@ HTML original do Outlook:
       "file_name": "foto-colaborador.jpg",
       "content_type": "image/jpeg",
       "file_size": 245000,
+      "content_bytes_size": 244744,
       "is_inline": false,
       "content_id": null
     }
@@ -56,6 +57,20 @@ HTML original do Outlook:
 
 A resposta do webhook mantém os campos existentes e, apenas para onboarding,
 acrescenta `signature_request_id` e `signature_request_duplicate`.
+
+`file_size` é o tamanho de transporte declarado pelo Outlook. Calcule
+`content_bytes_size` a partir do conteúdo efetivo com:
+
+```text
+length(base64ToBinary(body('Obter_anexo_(V2)')?['contentBytes']))
+```
+
+Envie o resultado no POST inicial e novamente no HTTP 08 de confirmação. O
+backend só marca o anexo como `Disponivel` quando o tamanho real coincide
+exatamente com o objeto gravado. O mesmo UUID do anexo continua vinculado a
+`signature_request_images` e, quando selecionado, a `photo_attachment_id`;
+por isso a fotografia passa a ser legível na aba `/signatures` assim que a
+confirmação termina.
 
 ## Segurança e idempotência
 

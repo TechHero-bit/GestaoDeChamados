@@ -10,7 +10,10 @@ import {
   prepareIncomingAttachments,
   sanitizeStorageFileName,
 } from "../src/services/incoming-attachment.service.js";
-import { webhookPayloadSchema } from "../src/schemas/webhook.schema.js";
+import {
+  completeIncomingAttachmentSchema,
+  webhookPayloadSchema,
+} from "../src/schemas/webhook.schema.js";
 
 class AttachmentDatabase {
   constructor() {
@@ -532,6 +535,280 @@ test("função isAttachmentSizeConsistent valida integridade de tamanhos", () =>
   assert.equal(isAttachmentSizeConsistent(29, 0), false);
   assert.equal(isAttachmentSizeConsistent(NaN, 29), false);
   assert.equal(isAttachmentSizeConsistent(29, NaN), false);
+
+  // Com prova do tamanho binário de contentBytes, a igualdade com o Storage
+  // prevalece sobre o tamanho de transporte declarado pelo Graph.
+  assert.equal(isAttachmentSizeConsistent(3_161_947, 4_027_326, 3_161_947), true);
+  assert.equal(isAttachmentSizeConsistent(142_344, 142_587, 142_344), true);
+  assert.equal(isAttachmentSizeConsistent(142_344, 142_000, 142_344), true);
+  assert.equal(isAttachmentSizeConsistent(142_343, 142_587, 142_344), false);
+});
+
+test("HTTP 08 aceita Image (1).jfif somente com igualdade ao tamanho real de contentBytes", async () => {
+  const database = new AttachmentDatabase();
+  await prepareIncomingAttachments(
+    {
+      ticket,
+      message,
+      attachments: [attachment({
+        attachment_id: "jfif-photo",
+        file_name: "Image (1).jfif",
+        content_type: "image/jpeg",
+        file_size: 4_027_326,
+        content_bytes_size: 3_161_947,
+      })],
+    },
+    { supabase: database },
+  );
+
+  const row = database.attachments[0];
+  assert.equal(row.outlook_declared_size, 4_027_326);
+  assert.equal(row.source_content_size, 3_161_947);
+  assert.equal(row.file_size, 3_161_947);
+  database.objects.set(row.storage_path, { size: 3_161_947, mimetype: "image/jpeg" });
+
+  const completed = await completeIncomingAttachment(
+    {
+      messageId: "outlook-message-1",
+      attachmentId: "jfif-photo",
+      contentBytesSize: 3_161_947,
+    },
+    { supabase: database },
+  );
+
+  assert.equal(completed.processing_status, "Disponivel");
+  assert.equal(completed.file_size, 3_161_947);
+  assert.equal(database.attachments[0].outlook_declared_size, 4_027_326);
+});
+
+test("HTTP 08 aceita image.png com 142587 declarados e 142344 bytes reais", async () => {
+  const database = new AttachmentDatabase();
+  await prepareIncomingAttachments(
+    {
+      ticket,
+      message,
+      attachments: [attachment({
+        attachment_id: "png-photo",
+        file_name: "image.png",
+        content_type: "image/png",
+        file_size: 142_587,
+      })],
+    },
+    { supabase: database },
+  );
+  const row = database.attachments[0];
+  database.objects.set(row.storage_path, { size: 142_344, mimetype: "image/png" });
+
+  const completed = await completeIncomingAttachment(
+    {
+      messageId: "outlook-message-1",
+      attachmentId: "png-photo",
+      contentBytesSize: 142_344,
+    },
+    { supabase: database },
+  );
+
+  assert.equal(completed.processing_status, "Disponivel");
+  assert.equal(database.attachments[0].source_content_size, 142_344);
+});
+
+test("prova do tamanho de origem não permite upload realmente truncado", async () => {
+  const database = new AttachmentDatabase();
+  await prepareIncomingAttachments(
+    {
+      ticket,
+      message,
+      attachments: [attachment({
+        attachment_id: "truncated-photo",
+        file_size: 4_027_326,
+        content_bytes_size: 3_161_947,
+      })],
+    },
+    { supabase: database },
+  );
+  const row = database.attachments[0];
+  database.objects.set(row.storage_path, { size: 3_000_000, mimetype: "image/jpeg" });
+
+  await assert.rejects(
+    completeIncomingAttachment(
+      {
+        messageId: "outlook-message-1",
+        attachmentId: "truncated-photo",
+        contentBytesSize: 3_161_947,
+      },
+      { supabase: database },
+    ),
+    { statusCode: 409 },
+  );
+  assert.equal(database.attachments[0].processing_error, "SIZE_MISMATCH");
+});
+
+test("tamanho binário adulterado entre o POST inicial e o HTTP 08 é rejeitado", async () => {
+  const database = new AttachmentDatabase();
+  await prepareIncomingAttachments(
+    {
+      ticket,
+      message,
+      attachments: [attachment({
+        attachment_id: "altered-size",
+        file_size: 4_027_326,
+        content_bytes_size: 3_161_947,
+      })],
+    },
+    { supabase: database },
+  );
+  const row = database.attachments[0];
+  database.objects.set(row.storage_path, { size: 3_161_947, mimetype: "image/jpeg" });
+
+  await assert.rejects(
+    completeIncomingAttachment(
+      {
+        messageId: "outlook-message-1",
+        attachmentId: "altered-size",
+        contentBytesSize: 3_161_948,
+      },
+      { supabase: database },
+    ),
+    { statusCode: 409 },
+  );
+  assert.equal(database.attachments[0].processing_error, "SOURCE_SIZE_MISMATCH");
+});
+
+test("objeto maior que o tamanho declarado só é aceito com prova binária exata", async () => {
+  const database = new AttachmentDatabase();
+  await prepareIncomingAttachments(
+    {
+      ticket,
+      message,
+      attachments: [attachment({
+        attachment_id: "larger-than-declared",
+        file_size: 142_000,
+        content_bytes_size: 142_344,
+      })],
+    },
+    { supabase: database },
+  );
+  const row = database.attachments[0];
+  database.objects.set(row.storage_path, { size: 142_344, mimetype: "image/png" });
+
+  const completed = await completeIncomingAttachment(
+    {
+      messageId: "outlook-message-1",
+      attachmentId: "larger-than-declared",
+      contentBytesSize: 142_344,
+    },
+    { supabase: database },
+  );
+  assert.equal(completed.processing_status, "Disponivel");
+});
+
+test("zero bytes é rejeitado no contrato e na confirmação do serviço", async () => {
+  assert.equal(
+    completeIncomingAttachmentSchema.safeParse({
+      message_id: "outlook-message-1",
+      attachment_id: "zero-source",
+      content_bytes_size: 0,
+    }).success,
+    false,
+  );
+
+  const database = new AttachmentDatabase();
+  await prepareIncomingAttachments(
+    {
+      ticket,
+      message,
+      attachments: [attachment({ attachment_id: "zero-source" })],
+    },
+    { supabase: database },
+  );
+  const row = database.attachments[0];
+  database.objects.set(row.storage_path, { size: 1024, mimetype: "application/pdf" });
+
+  await assert.rejects(
+    completeIncomingAttachment(
+      {
+        messageId: "outlook-message-1",
+        attachmentId: "zero-source",
+        contentBytesSize: 0,
+      },
+      { supabase: database },
+    ),
+    { statusCode: 409 },
+  );
+  assert.equal(database.attachments[0].processing_error, "INVALID_SOURCE_SIZE");
+});
+
+test("retry do mesmo message_id preserva tamanho declarado e associação do anexo", async () => {
+  const database = new AttachmentDatabase();
+  const metadata = attachment({
+    attachment_id: "retry-photo",
+    file_name: "foto-colaborador.jpg",
+    content_type: "image/jpeg",
+    file_size: 4_027_326,
+    content_bytes_size: 3_161_947,
+  });
+  const [first] = await prepareIncomingAttachments(
+    { ticket, message, attachments: [metadata] },
+    { supabase: database },
+  );
+  const row = database.attachments[0];
+  database.objects.set(row.storage_path, { size: 3_161_947, mimetype: "image/jpeg" });
+  await completeIncomingAttachment(
+    {
+      messageId: "outlook-message-1",
+      attachmentId: "retry-photo",
+      contentBytesSize: 3_161_947,
+    },
+    { supabase: database },
+  );
+
+  const [retry] = await prepareIncomingAttachments(
+    { ticket, message, attachments: [metadata] },
+    { supabase: database },
+  );
+  assert.equal(database.attachments.length, 1);
+  assert.equal(retry.id, first.id);
+  assert.equal(retry.processing_status, "Disponivel");
+  assert.equal(database.attachments[0].outlook_declared_size, 4_027_326);
+});
+
+test("retry do HTTP 08 valida o tamanho sem retirar anexo já Disponivel", async () => {
+  const database = new AttachmentDatabase();
+  await prepareIncomingAttachments(
+    {
+      ticket,
+      message,
+      attachments: [attachment({
+        attachment_id: "complete-retry",
+        file_size: 142_587,
+        content_bytes_size: 142_344,
+      })],
+    },
+    { supabase: database },
+  );
+  const row = database.attachments[0];
+  database.objects.set(row.storage_path, { size: 142_344, mimetype: "image/png" });
+  await completeIncomingAttachment(
+    {
+      messageId: "outlook-message-1",
+      attachmentId: "complete-retry",
+      contentBytesSize: 142_344,
+    },
+    { supabase: database },
+  );
+
+  await assert.rejects(
+    completeIncomingAttachment(
+      {
+        messageId: "outlook-message-1",
+        attachmentId: "complete-retry",
+        contentBytesSize: 142_343,
+      },
+      { supabase: database },
+    ),
+    { statusCode: 409 },
+  );
+  assert.equal(database.attachments[0].processing_status, "Disponivel");
 });
 
 test("Caso 2 — objeto inexistente no Storage marca anexo como Falhou com HTTP 409", async () => {
@@ -729,6 +1006,33 @@ test("arquivos acima de 6 MiB recebem estratégia resumable, sem passar pela fun
     assert.equal(prepared.upload.strategy, "resumable");
     assert.equal(prepared.upload.chunk_size, DIRECT_UPLOAD_RECOMMENDED_MAX_BYTES);
     assert.match(prepared.upload.endpoint, /\/storage\/v1\/upload\/resumable$/);
+  } finally {
+    if (previousUrl) process.env.SUPABASE_URL = previousUrl;
+    else delete process.env.SUPABASE_URL;
+  }
+});
+
+test("estratégia e Upload-Length usam content_bytes_size, não o tamanho de transporte", async () => {
+  const previousUrl = process.env.SUPABASE_URL;
+  process.env.SUPABASE_URL = "https://project.supabase.co";
+  try {
+    const database = new AttachmentDatabase();
+    const actualSize = DIRECT_UPLOAD_RECOMMENDED_MAX_BYTES + 1;
+    const [prepared] = await prepareIncomingAttachments(
+      {
+        ticket,
+        message,
+        attachments: [attachment({
+          file_size: DIRECT_UPLOAD_RECOMMENDED_MAX_BYTES - 1,
+          content_bytes_size: actualSize,
+        })],
+      },
+      { supabase: database },
+    );
+
+    assert.equal(prepared.upload.strategy, "resumable");
+    assert.equal(prepared.upload.upload_length, actualSize);
+    assert.equal(database.attachments[0].outlook_declared_size, DIRECT_UPLOAD_RECOMMENDED_MAX_BYTES - 1);
   } finally {
     if (previousUrl) process.env.SUPABASE_URL = previousUrl;
     else delete process.env.SUPABASE_URL;

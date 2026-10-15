@@ -100,12 +100,32 @@ export function toPublicIncomingAttachment(row, upload = null) {
 }
 
 function sameAttachmentMetadata(row, attachment) {
+  const declaredSize = row.outlook_declared_size;
+  const sameDeclaredSize = declaredSize !== null && declaredSize !== undefined
+    ? Number(declaredSize) === Number(attachment.file_size)
+    : row.processing_status === AVAILABLE_STATUS
+      // Linhas concluídas antes da migration 013 já tiveram file_size
+      // substituído pelo tamanho binário real. Os demais metadados e a chave
+      // única ainda identificam com segurança o mesmo anexo em um retry.
+      ? true
+      : Number(row.file_size) === Number(attachment.file_size);
+  let sameSourceSize = true;
+  if (attachment.content_bytes_size !== undefined) {
+    if (row.source_content_size !== null && row.source_content_size !== undefined) {
+      sameSourceSize =
+        Number(row.source_content_size) === Number(attachment.content_bytes_size);
+    } else if (row.processing_status === AVAILABLE_STATUS) {
+      sameSourceSize = Number(row.file_size) === Number(attachment.content_bytes_size);
+    }
+  }
+
   return (
     row.file_name === attachment.file_name &&
-    Number(row.file_size) === Number(attachment.file_size) &&
+    sameDeclaredSize &&
     row.content_type === normalizeContentType(attachment.content_type) &&
     row.is_inline === (attachment.is_inline === true) &&
-    (row.content_id || null) === (attachment.content_id || null)
+    (row.content_id || null) === (attachment.content_id || null) &&
+    sameSourceSize
   );
 }
 
@@ -136,7 +156,9 @@ async function insertAttachment(supabase, ticket, message, attachment) {
       outlook_attachment_id: attachment.attachment_id,
       file_name: attachment.file_name,
       content_type: normalizeContentType(attachment.content_type),
-      file_size: attachment.file_size,
+      file_size: attachment.content_bytes_size ?? attachment.file_size,
+      outlook_declared_size: attachment.file_size,
+      source_content_size: attachment.content_bytes_size ?? null,
       storage_path: storagePath,
       is_inline: attachment.is_inline === true,
       content_id: attachment.content_id || null,
@@ -296,6 +318,18 @@ export async function prepareIncomingAttachments(
       existingByOutlookId.set(row.outlook_attachment_id, row);
     }
 
+    if (
+      row.processing_status !== AVAILABLE_STATUS &&
+      (row.source_content_size === null || row.source_content_size === undefined) &&
+      attachment.content_bytes_size !== undefined
+    ) {
+      row = await updateAttachment(supabase, row.id, {
+        source_content_size: attachment.content_bytes_size,
+        file_size: attachment.content_bytes_size,
+      });
+      existingByOutlookId.set(row.outlook_attachment_id, row);
+    }
+
     if (row.processing_status === AVAILABLE_STATUS) {
       results.push(toPublicIncomingAttachment(row));
       continue;
@@ -344,8 +378,9 @@ async function markFailed(supabase, row, code) {
 export const MAX_TRANSPORT_HEADER_OVERHEAD_BYTES = 512;
 
 /**
- * Valida a integridade do tamanho binário armazenado em relação ao tamanho
- * declarado pelo Microsoft Graph / Power Automate.
+ * Valida a integridade do tamanho binário armazenado. Quando o Flow informa o
+ * tamanho efetivo de contentBytes, a comparação é exata. Sem esse valor, a
+ * regra legada compara com o tamanho de transporte declarado pelo Graph.
  *
  * No Microsoft Graph / Exchange, a propriedade size do anexo reflete o tamanho
  * de transporte (PR_ATTACH_SIZE), que inclui uma sobrecarga fixa de metadados
@@ -359,9 +394,26 @@ export const MAX_TRANSPORT_HEADER_OVERHEAD_BYTES = 512;
  *    legítimo de transporte (até 512 bytes). Uploads truncados além dessa
  *    margem são estritamente rejeitados.
  */
-export function isAttachmentSizeConsistent(objectSize, declaredSize) {
+export function isAttachmentSizeConsistent(
+  objectSize,
+  declaredSize,
+  contentBytesSize = undefined,
+) {
   if (!Number.isSafeInteger(objectSize) || objectSize <= 0) return false;
   if (!Number.isSafeInteger(declaredSize) || declaredSize <= 0) return false;
+
+  // Quando o Flow mede os bytes decodificados de contentBytes, essa é a
+  // referência efetiva do binário obtido do Outlook. Exigimos igualdade exata
+  // com o objeto persistido; a propriedade size do Graph é apenas tamanho de
+  // transporte e pode ser maior (ou, em casos atípicos, menor).
+  if (contentBytesSize !== undefined) {
+    return (
+      Number.isSafeInteger(contentBytesSize) &&
+      contentBytesSize > 0 &&
+      objectSize === contentBytesSize
+    );
+  }
+
   if (objectSize > declaredSize) return false;
   if (objectSize === declaredSize) return true;
 
@@ -370,7 +422,7 @@ export function isAttachmentSizeConsistent(objectSize, declaredSize) {
 }
 
 export async function completeIncomingAttachment(
-  { messageId, attachmentId },
+  { messageId, attachmentId, contentBytesSize },
   { supabase = getSupabase() } = {},
 ) {
   const row = await findAttachmentByOutlookMessageAndAttachmentId(
@@ -379,7 +431,19 @@ export async function completeIncomingAttachment(
     attachmentId,
   );
   if (!row) throw attachmentNotFoundError();
-  if (row.processing_status === AVAILABLE_STATUS) return toPublicIncomingAttachment(row);
+  if (row.processing_status === AVAILABLE_STATUS) {
+    if (
+      contentBytesSize !== undefined &&
+      (!Number.isSafeInteger(contentBytesSize) ||
+        contentBytesSize <= 0 ||
+        Number(row.file_size) !== contentBytesSize)
+    ) {
+      throw unavailableAttachmentError(
+        "O tamanho binário informado não corresponde ao anexo já confirmado.",
+      );
+    }
+    return toPublicIncomingAttachment(row);
+  }
 
   const object = await storageObjectForAttachment(supabase, row);
 
@@ -389,7 +453,23 @@ export async function completeIncomingAttachment(
   }
 
   const objectSize = Number(object?.metadata?.size);
-  const declaredSize = Number(row.file_size);
+  const declaredSize = Number(row.outlook_declared_size ?? row.file_size);
+  const storedSourceSize = row.source_content_size === null ||
+    row.source_content_size === undefined
+    ? undefined
+    : Number(row.source_content_size);
+
+  if (
+    contentBytesSize !== undefined &&
+    storedSourceSize !== undefined &&
+    contentBytesSize !== storedSourceSize
+  ) {
+    await markFailed(supabase, row, "SOURCE_SIZE_MISMATCH");
+    throw unavailableAttachmentError(
+      "O tamanho binário informado não corresponde ao obtido anteriormente do Outlook.",
+    );
+  }
+  const effectiveSourceSize = contentBytesSize ?? storedSourceSize;
 
   if (!Number.isSafeInteger(objectSize) || objectSize <= 0) {
     await markFailed(supabase, row, "INVALID_SIZE");
@@ -401,7 +481,22 @@ export async function completeIncomingAttachment(
     throw unavailableAttachmentError("O tamanho do arquivo enviado excede o limite suportado.");
   }
 
-  if (!isAttachmentSizeConsistent(objectSize, declaredSize)) {
+  if (
+    effectiveSourceSize !== undefined &&
+    (!Number.isSafeInteger(effectiveSourceSize) || effectiveSourceSize <= 0)
+  ) {
+    await markFailed(supabase, row, "INVALID_SOURCE_SIZE");
+    throw unavailableAttachmentError(
+      "O tamanho binário obtido do Outlook é inválido.",
+    );
+  }
+
+  if (effectiveSourceSize > INCOMING_ATTACHMENT_MAX_BYTES) {
+    await markFailed(supabase, row, "SIZE_EXCEEDED");
+    throw unavailableAttachmentError("O tamanho do arquivo enviado excede o limite suportado.");
+  }
+
+  if (!isAttachmentSizeConsistent(objectSize, declaredSize, effectiveSourceSize)) {
     await markFailed(supabase, row, "SIZE_MISMATCH");
     throw unavailableAttachmentError(
       "O tamanho do arquivo enviado não corresponde ao anexo recebido.",
@@ -414,6 +509,9 @@ export async function completeIncomingAttachment(
     processing_error: null,
     available_at: new Date().toISOString(),
     file_size: objectSize,
+    ...(effectiveSourceSize !== undefined
+      ? { source_content_size: effectiveSourceSize }
+      : {}),
     content_type:
       actualContentType === "application/octet-stream"
         ? row.content_type

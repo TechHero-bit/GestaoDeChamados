@@ -31,6 +31,15 @@ const attachmentSchema = z
         MAX_INCOMING_ATTACHMENT_BYTES,
         "file_size excede o limite suportado.",
       ),
+    content_bytes_size: z
+      .number({ invalid_type_error: "content_bytes_size deve ser um número." })
+      .int("content_bytes_size deve ser um número inteiro.")
+      .positive("content_bytes_size deve ser maior que zero.")
+      .max(
+        MAX_INCOMING_ATTACHMENT_BYTES,
+        "content_bytes_size excede o limite suportado.",
+      )
+      .optional(),
     is_inline: z.boolean().optional().default(false),
     content_id: z.string().trim().min(1).max(512).nullable().optional(),
   })
@@ -50,6 +59,21 @@ const attachmentActionSchema = z
       .max(1024, "attachment_id é muito longo."),
   })
   .strict();
+
+const completeAttachmentActionSchema = attachmentActionSchema.extend({
+  // Tamanho dos bytes efetivamente decodificados de contentBytes por
+  // base64ToBinary no Flow. Opcional durante a transição do contrato; quando
+  // presente, o backend exige igualdade exata com o objeto do Storage.
+  content_bytes_size: z
+    .number({ invalid_type_error: "content_bytes_size deve ser um número." })
+    .int("content_bytes_size deve ser um número inteiro.")
+    .positive("content_bytes_size deve ser maior que zero.")
+    .max(
+      MAX_INCOMING_ATTACHMENT_BYTES,
+      "content_bytes_size excede o limite suportado.",
+    )
+    .optional(),
+});
 
 /**
  * Schema do payload inicial do Power Automate. O JSON contém somente
@@ -124,7 +148,7 @@ export const webhookPayloadSchema = z.object({
     .default([]),
 });
 
-export const completeIncomingAttachmentSchema = attachmentActionSchema;
+export const completeIncomingAttachmentSchema = completeAttachmentActionSchema;
 
 export const failIncomingAttachmentSchema = attachmentActionSchema.extend({
   failure_code: z

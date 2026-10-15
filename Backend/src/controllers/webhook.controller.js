@@ -116,11 +116,13 @@ export async function confirmarAnexoOutlook(req, res, next) {
     const attachment = await completeIncomingAttachment({
       messageId: result.data.message_id,
       attachmentId: result.data.attachment_id,
+      contentBytesSize: result.data.content_bytes_size,
     });
     console.info("[INBOUND_ATTACHMENT_COMPLETE]", JSON.stringify({
       attachment_id: attachment.id,
       processing_status: attachment.processing_status,
       file_size: attachment.file_size,
+      source_size_provided: result.data.content_bytes_size !== undefined,
     }));
     return res.status(200).json({ success: true, data: attachment });
   } catch (error) {
