@@ -16,6 +16,10 @@ import {
   SignatureRequestUpdate,
 } from '../../../../core/models/signature-request.model';
 import { SignatureRequestService } from '../../../../core/services/signature-request.service';
+import {
+  canDownloadSignaturePreview,
+  canGenerateOfficialSignature,
+} from '../../../../core/utils/signature-readiness';
 
 interface SignatureForm {
   employee_name: string;
@@ -56,12 +60,73 @@ export class SignaturesPage implements OnInit, AfterViewInit, OnDestroy {
   readonly error = signal('');
   readonly success = signal('');
   readonly total = signal(0);
+  readonly showArchived = signal(false);
+  readonly archiving = signal(false);
   readyToGenerate(): boolean {
-    return !this.generationBlockedReason() && !this.saving() && !this.generating() && !this.previewDownloading();
+    const request = this.selected();
+    return canGenerateOfficialSignature({
+      selected: Boolean(request),
+      archived: Boolean(request?.archived_at),
+      fieldsValid: !this.hasInvalidFormFields(),
+      hasUnsavedChanges: this.hasUnsavedChanges(),
+      emailConflict: Boolean(request?.email_conflict),
+      photoReady: this.photoReady(),
+      photoLoading: this.photoLoading(),
+      templateReady: this.templateReady(),
+      busy: this.saving() || this.generating() || this.previewDownloading(),
+    }) && !this.generationBlockedReason();
+  }
+
+  hasUnsavedChanges(): boolean {
+    const request = this.selected();
+    if (!request) return false;
+    return this.form.employee_name.trim() !== (request.employee_name || '') ||
+      this.form.job_title.trim() !== (request.job_title || '') ||
+      this.form.phone.trim() !== (request.phone || '') ||
+      this.form.corporate_email.trim().toLowerCase() !== (request.corporate_email || '').toLowerCase();
+  }
+
+  fieldError(field: keyof SignatureForm): string {
+    const value = this.form[field].trim();
+    if (field === 'employee_name' && value.length < 2) return 'Informe o nome completo do colaborador.';
+    if (field === 'job_title' && value.length < 2) return 'Informe a função do colaborador.';
+    if (field === 'phone' && (value.length < 8 || value.length > 40)) return 'Informe um telefone válido (8 a 40 caracteres).';
+    if (field === 'corporate_email') {
+      if (!/^[a-z0-9][a-z0-9._-]*@centaurotelecom\.com\.br$/i.test(value)) return 'Use um e-mail válido @centaurotelecom.com.br.';
+      const request = this.selected();
+      if (request && value.toLowerCase() === (request.corporate_email || '').toLowerCase()) {
+        if (request.email_conflicts?.user_exists) return 'Este e-mail já pertence a um usuário cadastrado; onboarding não pode atualizar uma assinatura existente.';
+        if (request.email_conflicts?.requests.length) return 'Este e-mail está em outra solicitação ativa. Arquive a duplicada ou use outro e-mail.';
+      }
+    }
+    return '';
+  }
+
+  hasInvalidFormFields(): boolean {
+    return this.form.employee_name.trim().length < 2 || this.form.job_title.trim().length < 2 ||
+      this.form.phone.trim().length < 8 || this.form.phone.trim().length > 40 ||
+      !/^[a-z0-9][a-z0-9._-]*@centaurotelecom\.com\.br$/i.test(this.form.corporate_email.trim());
+  }
+
+  completedSteps(): { label: string; done: boolean }[] {
+    const request = this.selected();
+    return [
+      { label: 'Dados', done: Boolean(this.form.employee_name.trim() && this.form.job_title.trim() && this.form.phone.trim() && /^[a-z0-9][a-z0-9._-]*@centaurotelecom\.com\.br$/i.test(this.form.corporate_email.trim())) && !this.hasUnsavedChanges() },
+      { label: 'E-mail livre', done: Boolean(request && !request.email_conflict && !this.hasUnsavedChanges()) },
+      { label: 'Fotografia', done: this.photoReady() },
+      { label: 'Modelo', done: this.templateReady() },
+    ];
   }
 
   readyToDownloadPreview(): boolean {
-    return !this.previewBlockedReason() && !this.saving() && !this.generating() && !this.previewDownloading();
+    return canDownloadSignaturePreview({
+      selected: Boolean(this.selected()),
+      fieldsComplete: Boolean(this.form.employee_name.trim() && this.form.job_title.trim() && this.form.phone.trim() && this.form.corporate_email.trim()),
+      photoReady: this.photoReady(),
+      photoLoading: this.photoLoading(),
+      templateReady: this.templateReady(),
+      busy: this.saving() || this.generating() || this.previewDownloading(),
+    }) && !this.previewBlockedReason();
   }
 
   previewBlockedReason(): string {
@@ -79,6 +144,11 @@ export class SignaturesPage implements OnInit, AfterViewInit, OnDestroy {
   generationBlockedReason(): string {
     const request = this.selected();
     if (!request) return 'Selecione uma solicitação.';
+    if (request.archived_at) return 'Esta solicitação está arquivada. Consulte o histórico; não é possível gerar novas versões.';
+    if (this.hasInvalidFormFields()) {
+      return 'Corrija os campos indicados antes da geração oficial.';
+    }
+    if (this.hasUnsavedChanges()) return 'Há alterações pendentes. Salve os dados para revalidar o e-mail.';
     if (!this.form.employee_name.trim() || !this.form.job_title.trim() ||
         !this.form.phone.trim() || !this.form.corporate_email.trim()) {
       return 'Preencha nome, função, telefone e e-mail corporativo.';
@@ -86,7 +156,9 @@ export class SignaturesPage implements OnInit, AfterViewInit, OnDestroy {
     if (!/^[a-z0-9][a-z0-9._-]*@centaurotelecom\.com\.br$/i.test(this.form.corporate_email.trim())) {
       return 'Informe um e-mail válido @centaurotelecom.com.br.';
     }
-    if (request.email_conflict) return 'O e-mail está em uso. Corrija e salve os dados para verificar novamente.';
+    if (request.email_conflicts?.user_exists) return 'O e-mail pertence a um usuário cadastrado. É necessário um fluxo separado de atualização de assinatura.';
+    if (request.email_conflicts?.requests.length) return 'O e-mail aparece em outra solicitação ativa. Arquive a solicitação duplicada ou informe outro e-mail.';
+    if (request.email_conflict) return 'O conflito do e-mail ainda não foi revalidado. Salve os dados.';
     if (!request.photo_attachment_id && !request.has_manual_photo) return 'Selecione ou envie uma fotografia.';
     if (this.photoLoading()) return 'Carregando a fotografia selecionada…';
     if (!this.photoReady()) return 'A fotografia não pôde ser carregada. Consulte o aviso acima ou envie outra foto.';
@@ -122,7 +194,7 @@ export class SignaturesPage implements OnInit, AfterViewInit, OnDestroy {
   loadList(preferredId?: string): void {
     this.loading.set(true);
     this.error.set('');
-    this.service.list(this.statusFilter, this.search).subscribe({
+    this.service.list(this.statusFilter, this.search, this.showArchived()).subscribe({
       next: (response) => {
         this.requests.set(response.data);
         this.total.set(response.total);
@@ -161,6 +233,10 @@ export class SignaturesPage implements OnInit, AfterViewInit, OnDestroy {
   async save(): Promise<void> {
     const request = this.selected();
     if (!request || this.saving()) return;
+    if (this.hasInvalidFormFields()) {
+      this.error.set('Revise os campos indicados antes de salvar.');
+      return;
+    }
     this.saving.set(true);
     this.error.set('');
     this.success.set('');
@@ -240,6 +316,27 @@ export class SignaturesPage implements OnInit, AfterViewInit, OnDestroy {
       this.error.set((error as Error).message);
     } finally {
       this.generating.set(false);
+    }
+  }
+
+  async archiveSelected(): Promise<void> {
+    const request = this.selected();
+    if (!request || request.archived_at || this.archiving()) return;
+    const reason = window.prompt('Informe o motivo do arquivamento (ex.: solicitação de teste duplicada):');
+    if (!reason || reason.trim().length < 5) return;
+    if (!window.confirm(`Arquivar a solicitação de ${request.employee_name || 'colaborador'}? Ela será preservada no histórico e não será excluída.`)) return;
+    this.archiving.set(true);
+    this.error.set('');
+    this.success.set('');
+    try {
+      const archived = await firstValueFrom(this.service.archive(request.id, reason.trim()));
+      this.success.set('Solicitação arquivada com rastreabilidade. Nenhum registro ou versão foi excluído.');
+      this.refreshListRow(archived);
+      this.loadList(this.showArchived() ? archived.id : undefined);
+    } catch (error) {
+      this.error.set((error as Error).message);
+    } finally {
+      this.archiving.set(false);
     }
   }
 

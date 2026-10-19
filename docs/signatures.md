@@ -82,8 +82,9 @@ confirmação termina.
 - Uploads aceitam somente PNG, JPEG ou WebP com até 5 MiB.
 - O PNG final é validado por assinatura binária e por dimensão exata
   (768 × 200 px) antes de ser persistido.
-- E-mails são comparados com solicitações e usuários existentes. Um conflito
-  bloqueia a geração até ser corrigido.
+- E-mails são comparados separadamente com usuários cadastrados e solicitações
+  ativas (não arquivadas). Conta existente sempre bloqueia onboarding; uma
+  solicitação duplicada pode ser resolvida com arquivamento auditável.
 
 ## Banco de dados
 
@@ -94,6 +95,12 @@ A migration revisável está em
 - `signature_request_images`: candidatos e explicações da classificação;
 - `signature_artifacts`: histórico imutável das gerações;
 - bucket privado `AssinaturasColaboradores`.
+
+A migration `014_signature_request_archive.sql` adiciona data, usuário e motivo
+do arquivamento, preservando a solicitação e os artefatos. O endpoint autenticado
+`POST /api/signatures/:id/archive` exige motivo. A lista omite arquivadas por
+padrão; `include_archived=true` permite consultá-las. Não aplicar migrations em
+produção sem revisão e autorização.
 
 Não execute a migration em produção sem revisão e autorização. A migration 008
 e as assinaturas pessoais dos administradores não são modificadas.
@@ -118,10 +125,11 @@ função, telefone e e-mail são substituídos. A referência
 - `GET|POST /api/signatures/:id/photo`
 - `POST /api/signatures/:id/generate`
 - `GET /api/signatures/:id/history/:artifactId`
+- `POST /api/signatures/:id/archive`
 
 ## Ativação
 
-1. Revisar e executar a migration 012 no ambiente desejado.
+1. Revisar e executar as migrations 012 e 014 no ambiente desejado.
 2. Confirmar que `SUPABASE_URL`, `SUPABASE_SECRET_KEY` e `WEBHOOK_SECRET`
    continuam configurados.
 3. Adicionar `corpo_html` ao Flow (recomendado).

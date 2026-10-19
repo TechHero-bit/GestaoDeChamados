@@ -7,6 +7,7 @@ import {
 import {
   abrirFotografia,
   abrirImagemCandidata,
+  arquivarSolicitacao,
   atualizarSolicitacao,
   baixarAssinatura,
   buscarSolicitacao,
@@ -41,6 +42,7 @@ router.post(
   gerarAssinatura,
 );
 router.get("/:id/history/:artifactId", limit, baixarAssinatura);
+router.post("/:id/archive", limit, arquivarSolicitacao);
 router.get("/:id", limit, buscarSolicitacao);
 router.put("/:id", limit, atualizarSolicitacao);
 

@@ -25,8 +25,9 @@ export class SignatureRequestService {
   private readonly http = inject(HttpClient);
   private readonly apiUrl = `${environment.apiUrl}/signatures`;
 
-  list(status: CorporateSignatureStatus | '' = '', search = ''): Observable<SignatureRequestListResponse> {
+  list(status: CorporateSignatureStatus | '' = '', search = '', includeArchived = false): Observable<SignatureRequestListResponse> {
     let params = new HttpParams().set('page_size', '50');
+    if (includeArchived) params = params.set('include_archived', 'true');
     if (status) params = params.set('status', status);
     if (search.trim()) params = params.set('search', search.trim());
     return this.http
@@ -43,6 +44,13 @@ export class SignatureRequestService {
 
   update(id: string, values: SignatureRequestUpdate): Observable<SignatureRequest> {
     return this.http.put<DataResponse<SignatureRequest>>(`${this.apiUrl}/${id}`, values).pipe(
+      map((response) => response.data),
+      catchError((error) => this.handleError(error)),
+    );
+  }
+
+  archive(id: string, reason: string): Observable<SignatureRequest> {
+    return this.http.post<DataResponse<SignatureRequest>>(`${this.apiUrl}/${id}/archive`, { reason }).pipe(
       map((response) => response.data),
       catchError((error) => this.handleError(error)),
     );

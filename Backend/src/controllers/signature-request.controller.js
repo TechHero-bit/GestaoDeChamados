@@ -1,4 +1,5 @@
 import {
+  archiveSignatureRequestSchema,
   listSignatureRequestsSchema,
   signatureRequestIdSchema,
   updateSignatureRequestSchema,
@@ -38,6 +39,27 @@ export async function listarSolicitacoes(req, res, next) {
       total: response.total,
       page: response.page,
       page_size: response.pageSize,
+      include_archived: result.data.include_archived,
+    });
+  } catch (error) {
+    next(error);
+  }
+}
+
+export async function arquivarSolicitacao(req, res, next) {
+  try {
+    const id = parseId(req.params.id, res);
+    if (!id) return;
+    const result = archiveSignatureRequestSchema.safeParse(req.body);
+    if (!result.success) return validationError(res, result);
+    const request = await signatureRequestService.archiveSignatureRequest(
+      id,
+      { ...result.data, userId: req.user.id },
+    );
+    return res.json({
+      success: true,
+      message: "Solicitação arquivada com rastreabilidade; nenhum registro foi excluído.",
+      data: request,
     });
   } catch (error) {
     next(error);

@@ -38,6 +38,18 @@ export interface SignatureRequest {
   status: CorporateSignatureStatus;
   extraction_warnings: string[];
   email_conflict: boolean;
+  email_conflicts: {
+    user_exists: boolean;
+    requests: Array<{
+      id: string;
+      employee_name: string | null;
+      status: CorporateSignatureStatus;
+      created_at: string;
+    }>;
+  };
+  archived_at: string | null;
+  archived_by: string | null;
+  archive_reason: string | null;
   photo_selection_required: boolean;
   photo_confidence: number | null;
   photo_attachment_id: string | null;

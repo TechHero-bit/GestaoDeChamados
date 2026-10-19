@@ -28,6 +28,9 @@ const REQUEST_FIELDS = [
   "status",
   "extraction_warnings",
   "email_conflict",
+  "archived_at",
+  "archived_by",
+  "archive_reason",
   "photo_selection_required",
   "photo_confidence",
   "photo_attachment_id",
@@ -52,30 +55,39 @@ function normalizedSlug(value) {
     .replace(/^-|-$/g, "");
 }
 
-function toPublicRequest(row, images = [], history = []) {
+function toPublicRequest(row, images = [], history = [], emailConflicts = null) {
+  const currentEmailConflict = emailConflicts
+    ? hasEmailConflict(emailConflicts)
+    : Boolean(row.email_conflict);
   return {
     ...row,
+    email_conflict: currentEmailConflict,
+    status: row.status === "Gerada" ? "Gerada" : statusFor(row, currentEmailConflict),
+    ...(emailConflicts ? { extraction_warnings: warningsFor(row, currentEmailConflict) } : {}),
     has_manual_photo: Boolean(row.photo_storage_path),
     photo_storage_path: undefined,
+    email_conflicts: emailConflicts || { user_exists: false, requests: [] },
     images,
     history,
   };
 }
 
-async function emailIsInUse(supabase, email, excludedRequestId = null) {
-  if (!email) return false;
+export async function findCorporateEmailConflicts(supabase, email, excludedRequestId = null) {
+  if (!email) return { user_exists: false, requests: [] };
   let requestQuery = supabase
     .from("signature_requests")
-    .select("id")
+    .select("id,employee_name,status,created_at")
     .ilike("corporate_email", email)
-    .limit(1);
+    .is("archived_at", null)
+    .order("created_at", { ascending: false })
+    .limit(10);
   if (excludedRequestId) requestQuery = requestQuery.neq("id", excludedRequestId);
 
   const [
-    { data: request, error: requestError },
+    { data: requests, error: requestError },
     { data: user, error: userError },
   ] = await Promise.all([
-    requestQuery.maybeSingle(),
+    requestQuery,
     supabase
       .from("users")
       .select("id")
@@ -89,7 +101,16 @@ async function emailIsInUse(supabase, email, excludedRequestId = null) {
       requestError || userError,
     );
   }
-  return Boolean(request || user);
+  return {
+    user_exists: Boolean(user),
+    requests: (requests || []).map(({ id, employee_name, status, created_at }) => ({
+      id, employee_name, status, created_at,
+    })),
+  };
+}
+
+function hasEmailConflict(conflicts) {
+  return conflicts.user_exists || conflicts.requests.length > 0;
 }
 
 function statusFor(request, emailConflict) {
@@ -138,7 +159,8 @@ export async function processOutlookOnboarding(
   const content = payload.corpo_html || payload.corpo_mensagem;
   const extracted = extractOnboardingFields(content);
   const corporateEmail = corporateEmailForName(extracted.employeeName);
-  const emailConflict = await emailIsInUse(supabase, corporateEmail);
+  const emailConflicts = await findCorporateEmailConflicts(supabase, corporateEmail);
+  const emailConflict = hasEmailConflict(emailConflicts);
   const candidates = classifyImageCandidates(attachments, content);
   const selectedPhoto = choosePhotoCandidate(candidates);
   const draftRequest = {
@@ -209,13 +231,13 @@ export async function processOutlookOnboarding(
   }
 
   return {
-    request: toPublicRequest(request, candidates),
+    request: toPublicRequest(request, candidates, [], emailConflicts),
     duplicate: false,
   };
 }
 
 export async function listSignatureRequests(
-  { status, search, page, page_size: pageSize },
+  { status, search, page, page_size: pageSize, include_archived = false },
   { supabase = getSupabase() } = {},
 ) {
   const from = (page - 1) * pageSize;
@@ -224,6 +246,7 @@ export async function listSignatureRequests(
     .select(REQUEST_FIELDS, { count: "exact" })
     .order("created_at", { ascending: false })
     .range(from, from + pageSize - 1);
+  if (!include_archived) query = query.is("archived_at", null);
   if (status) query = query.eq("status", status);
   const normalizedSearch = search?.replace(/[(),]/g, " ").trim();
   if (normalizedSearch) {
@@ -292,7 +315,8 @@ export async function getSignatureRequest(
       available_at: attachment?.available_at || null,
     }),
   );
-  return toPublicRequest(request, publicImages, artifacts || []);
+  const conflicts = await findCorporateEmailConflicts(supabase, request.corporate_email, id);
+  return toPublicRequest(request, publicImages, artifacts || [], conflicts);
 }
 
 async function getPrivateRequest(id, supabase) {
@@ -308,12 +332,19 @@ async function getPrivateRequest(id, supabase) {
   return data;
 }
 
+function assertRequestActive(request, action) {
+  if (request.archived_at) {
+    throw serviceError(`${action}: a solicitação está arquivada`, null, 409);
+  }
+}
+
 export async function updateSignatureRequest(
   id,
   updates,
   { supabase = getSupabase() } = {},
 ) {
   const current = await getPrivateRequest(id, supabase);
+  assertRequestActive(current, "atualizar");
   let selectedAttachment = current.photo_attachment_id;
   let manualPhoto = current.photo_storage_path;
 
@@ -356,16 +387,16 @@ export async function updateSignatureRequest(
     photo_attachment_id: selectedAttachment,
     photo_storage_path: manualPhoto,
   };
-  const emailConflict = await emailIsInUse(
+  const emailConflicts = await findCorporateEmailConflicts(
     supabase,
     next.corporate_email,
     id,
   );
   const patch = {
     ...updates,
-    email_conflict: emailConflict,
-    status: statusFor(next, emailConflict),
-    extraction_warnings: warningsFor(next, emailConflict),
+    email_conflict: hasEmailConflict(emailConflicts),
+    status: statusFor(next, hasEmailConflict(emailConflicts)),
+    extraction_warnings: warningsFor(next, hasEmailConflict(emailConflicts)),
     ...(updates.photo_attachment_id !== undefined
       ? {
           photo_storage_path: null,
@@ -381,6 +412,50 @@ export async function updateSignatureRequest(
     .eq("id", id);
   if (error) {
     throw serviceError("atualizar a solicitação de assinatura", error);
+  }
+  return getSignatureRequest(id, { supabase });
+}
+
+export async function archiveSignatureRequest(
+  id,
+  { reason, userId },
+  { supabase = getSupabase() } = {},
+) {
+  const current = await getPrivateRequest(id, supabase);
+  if (current.archived_at) {
+    throw serviceError("arquivar a solicitação: ela já está arquivada", null, 409);
+  }
+  const archivedAt = new Date().toISOString();
+  const { error } = await supabase
+    .from("signature_requests")
+    .update({ archived_at: archivedAt, archived_by: userId, archive_reason: reason.trim() })
+    .eq("id", id)
+    .is("archived_at", null);
+  if (error) throw serviceError("arquivar a solicitação de assinatura", error);
+
+  // Recalcula os conflitos das outras solicitações ativas do mesmo e-mail.
+  // Artefatos e a solicitação arquivada são preservados integralmente.
+  if (current.corporate_email) {
+    const { data: peers, error: peersError } = await supabase
+      .from("signature_requests")
+      .select("id,employee_name,job_title,phone,corporate_email,status,photo_attachment_id,photo_storage_path")
+      .ilike("corporate_email", current.corporate_email)
+      .is("archived_at", null);
+    if (peersError) throw serviceError("atualizar os conflitos após o arquivamento", peersError);
+    for (const peer of peers || []) {
+      const conflicts = await findCorporateEmailConflicts(supabase, peer.corporate_email, peer.id);
+      const conflict = hasEmailConflict(conflicts);
+      const patch = {
+        email_conflict: conflict,
+        extraction_warnings: warningsFor(peer, conflict),
+        ...(peer.status !== "Gerada" ? { status: statusFor(peer, conflict) } : {}),
+      };
+      const { error: peerError } = await supabase
+        .from("signature_requests")
+        .update(patch)
+        .eq("id", peer.id);
+      if (peerError) throw serviceError("atualizar o status das solicitações duplicadas", peerError);
+    }
   }
   return getSignatureRequest(id, { supabase });
 }
@@ -415,6 +490,7 @@ export async function uploadSignaturePhoto(
 ) {
   assertPhoto(file);
   const current = await getPrivateRequest(id, supabase);
+  assertRequestActive(current, "enviar fotografia para");
   const storagePath = `requests/${id}/photos/${randomUUID()}.${imageExtension(file.mimetype)}`;
   const { error: uploadError } = await supabase.storage
     .from(SIGNATURE_BUCKET)
@@ -429,7 +505,7 @@ export async function uploadSignaturePhoto(
     photo_storage_path: storagePath,
     photo_attachment_id: null,
   };
-  const emailConflict = await emailIsInUse(
+  const emailConflicts = await findCorporateEmailConflicts(
     supabase,
     next.corporate_email,
     id,
@@ -441,9 +517,9 @@ export async function uploadSignaturePhoto(
       photo_attachment_id: null,
       photo_selection_required: false,
       photo_confidence: 1,
-      email_conflict: emailConflict,
-      status: statusFor(next, emailConflict),
-      extraction_warnings: warningsFor(next, emailConflict),
+      email_conflict: hasEmailConflict(emailConflicts),
+      status: statusFor(next, hasEmailConflict(emailConflicts)),
+      extraction_warnings: warningsFor(next, hasEmailConflict(emailConflicts)),
     })
     .eq("id", id);
   if (error) {
@@ -575,7 +651,9 @@ function assertGeneratedPng(file) {
   if (
     !file ||
     file.mimetype !== "image/png" ||
-    signature !== "89504e470d0a1a0a"
+    signature !== "89504e470d0a1a0a" ||
+    file.buffer.length < 24 ||
+    file.buffer.toString("ascii", 12, 16) !== "IHDR"
   ) {
     throw serviceError("validar a assinatura gerada como PNG", null, 400);
   }
@@ -601,14 +679,19 @@ export async function saveGeneratedSignature(
 ) {
   assertGeneratedPng(file);
   const request = await getPrivateRequest(id, supabase);
-  const emailConflict = await emailIsInUse(
+  assertRequestActive(request, "gerar assinatura para");
+  const emailConflicts = await findCorporateEmailConflicts(
     supabase,
     request.corporate_email,
     id,
   );
-  if (statusFor(request, emailConflict) !== "Pendente") {
+  if (statusFor(request, hasEmailConflict(emailConflicts)) !== "Pendente") {
     throw serviceError(
-      "gerar a assinatura enquanto há campos pendentes ou e-mail duplicado",
+      emailConflicts.user_exists
+        ? "gerar a assinatura: o e-mail já pertence a um usuário cadastrado; use o fluxo de atualização de assinatura"
+        : emailConflicts.requests.length > 0
+          ? "gerar a assinatura: arquive ou resolva as solicitações duplicadas ativas"
+          : "gerar a assinatura enquanto há campos pendentes ou fotografia ausente",
       null,
       409,
     );
@@ -631,6 +714,12 @@ export async function saveGeneratedSignature(
     await downloadSignatureImage(
       supabase, INCOMING_ATTACHMENT_BUCKET, availablePhoto.storage_path,
       availablePhoto.content_type, { requestId: id, attachmentId: availablePhoto.id },
+    );
+  } else if (request.photo_storage_path) {
+    const photoType = request.photo_storage_path.endsWith(".png") ? "image/png"
+      : request.photo_storage_path.endsWith(".webp") ? "image/webp" : "image/jpeg";
+    await downloadSignatureImage(
+      supabase, SIGNATURE_BUCKET, request.photo_storage_path, photoType, { requestId: id },
     );
   }
 

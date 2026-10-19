@@ -5,6 +5,7 @@ export const signatureRequestIdSchema = z.string().uuid();
 export const listSignatureRequestsSchema = z.object({
   status: z.enum(["Pendente", "Revisão necessária", "Gerada"]).optional(),
   search: z.string().trim().max(120).optional(),
+  include_archived: z.enum(["true", "false"]).transform((value) => value === "true").default(false),
   page: z.coerce.number().int().min(1).default(1),
   page_size: z.coerce.number().int().min(1).max(50).default(20),
 });
@@ -29,3 +30,7 @@ export const updateSignatureRequestSchema = z
   .refine((value) => Object.keys(value).length > 0, {
     message: "Informe ao menos um campo para atualizar.",
   });
+
+export const archiveSignatureRequestSchema = z.object({
+  reason: z.string().trim().min(5).max(500),
+});
