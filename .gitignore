@@ -46,6 +46,7 @@ scripts/*
 Backend/scripts/*
 !Backend/scripts/create-admin.js
 !Backend/scripts/diag-shared-mailbox-get.js
+!Backend/scripts/reprocess-signature-onboarding.js
 
 # Verificação local do Kanban
 Frontend/test-results/

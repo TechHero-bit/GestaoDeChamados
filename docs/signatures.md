@@ -10,10 +10,13 @@ respostas aos chamados.
 1. O Power Automate envia o e-mail para `POST /api/webhooks/outlook` usando o
    mesmo `x-webhook-secret` atual.
 2. O chamado e seus anexos continuam sendo criados normalmente.
-3. Quando o assunto é exatamente
-   `Centauro/Interno: Chamado - Onboarding de TI` (comparação sem diferenciar
-   maiúsculas, acentos e espaços externos), o backend cria uma linha em
+3. Quando o assunto corresponde a
+   `Centauro/Interno: Chamado - Onboarding de TI`, o backend cria uma linha em
    `signature_requests`.
+   A comparação ignora caixa, acentos, variações de espaços/separadores e
+   prefixos de resposta/encaminhamento do Outlook (`RE:`, `RES:`, `ENC:`,
+   `FW:`, `FWD:`, inclusive encadeados). Outros tipos de chamado e assuntos
+   com complementos não são classificados como onboarding.
 4. Nome, função e telefone são extraídos do corpo. O e-mail corporativo é
    sugerido com o primeiro nome e o último sobrenome, incluindo `de` somente
    quando ele aparece imediatamente antes do último sobrenome.
@@ -136,6 +139,22 @@ função, telefone e e-mail são substituídos. A referência
 4. Publicar backend e frontend juntos, pois a página depende das novas tabelas.
 5. Enviar um onboarding de teste com foto e assinatura completa do remetente.
 6. Confirmar seleção manual em caso ambíguo e validar o PNG exportado.
+
+## Recuperar onboarding recebido antes da correção do assunto
+
+Para um chamado cuja mensagem original já foi gravada, consulte primeiro:
+
+```powershell
+node Backend/scripts/reprocess-signature-onboarding.js --ticket <UUID_DO_CHAMADO>
+```
+
+O padrão é somente leitura (`dry_run: true`). O comando verifica o payload
+original, a mensagem vinculada, os anexos existentes e a idempotência. Após
+autorização explícita de escrita, acrescente `--apply` para criar apenas a
+solicitação e seus candidatos a foto, reaproveitando os anexos. Não recria o
+chamado nem envia mensagens. A chave única do Outlook impede repetição.
+Esse comando recupera a mensagem original do chamado; para mensagens
+posteriores da mesma conversa, reenvie a entrega correspondente pelo Flow.
 
 ## Diagnóstico da fotografia
 

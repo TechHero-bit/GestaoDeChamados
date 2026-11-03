@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { isOnboardingSubject } from "../services/signature-onboarding-parser.js";
 
 const MAX_INCOMING_ATTACHMENTS = 25;
 const MAX_INCOMING_ATTACHMENT_BYTES = 5 * 1024 * 1024 * 1024;
@@ -115,6 +116,7 @@ export const webhookPayloadSchema = z.object({
       (val) => {
         const lower = val.toLowerCase();
         return (
+          isOnboardingSubject(val) ||
           lower.includes("(chamado)") ||
           lower.includes("centauro / interno: chamado -") ||
           lower.includes("centauro/interno: chamado -")

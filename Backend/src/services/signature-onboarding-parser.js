@@ -10,7 +10,12 @@ function normalizeComparable(value) {
 }
 
 export function isOnboardingSubject(subject) {
-  return normalizeComparable(subject) === normalizeComparable(ONBOARDING_SUBJECT);
+  const canonicalSubject = (value) => normalizeComparable(value)
+    .replace(/[\u200b-\u200d\ufeff]/g, "")
+    .replace(/^(?:(?:re|res|enc|fw|fwd)(?:\[\d+\])?\s*:\s*)+/i, "")
+    .replace(/[\u2010-\u2015\u2212]/g, "-")
+    .replace(/\s*([/:\-])\s*/g, "$1");
+  return canonicalSubject(subject) === canonicalSubject(ONBOARDING_SUBJECT);
 }
 
 const HTML_ENTITIES = new Map([

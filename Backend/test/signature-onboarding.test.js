@@ -56,6 +56,23 @@ test("gera e-mail com primeiro e último nome e inclui somente o de antes do úl
   assert.equal(corporateEmailForName("Madonna"), null);
 });
 
+test("reconhece respostas e encaminhamentos do Outlook sem aceitar outros tipos de chamado", () => {
+  for (const subject of [
+    "RE: Centauro/Interno: Chamado - Onboarding de TI",
+    "RES: ENC: RE: Centauro / Interno: Chamado – Onboarding de TI",
+    "FW: Centauro/Interno: Chamado - Onboarding de TI",
+    "FWD: RE[2]: Centauro/Interno: Chamado - Onboarding de TI",
+  ]) {
+    assert.equal(isOnboardingSubject(subject), true, subject);
+    assert.equal(webhookPayloadSchema.shape.assunto.safeParse(subject).success, true);
+  }
+  for (const subject of [
+    "RE: Centauro/Interno: Chamado - Desligamento de TI",
+    "Centauro/Interno: Chamado - Onboarding de TI cancelado",
+    "Assunto qualquer: Centauro/Interno: Chamado - Onboarding de TI",
+  ]) assert.equal(isOnboardingSubject(subject), false, subject);
+});
+
 test("extrai nome, função e telefone de HTML típico do Outlook", () => {
   const fields = extractOnboardingFields(`
     <table>
