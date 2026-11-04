@@ -179,9 +179,19 @@ export class SignaturesPage implements OnInit, AfterViewInit, OnDestroy {
   }
 
   ngAfterViewInit(): void {
-    this.template.onload = () => {
-      this.templateReady.set(this.template.naturalWidth === 800 && this.template.naturalHeight === 200);
-      void this.drawPreview();
+    this.template.onload = async () => {
+      try {
+        const fonts = await Promise.all([
+          new FontFace('Signature League Spartan', 'url(/assets/signatures/fonts/LeagueSpartan.ttf)', { weight: '700' }).load(),
+          new FontFace('Signature Poppins', 'url(/assets/signatures/fonts/Poppins-Regular.ttf)').load(),
+        ]);
+        fonts.forEach((font) => document.fonts.add(font));
+        this.templateReady.set(this.template.naturalWidth === 800 && this.template.naturalHeight === 200);
+        await this.drawPreview();
+      } catch {
+        this.templateReady.set(false);
+        this.error.set('Não foi possível carregar as fontes da assinatura. Atualize a página para tentar novamente.');
+      }
     };
     this.template.onerror = () => {
       this.templateReady.set(false);
@@ -531,7 +541,7 @@ export class SignaturesPage implements OnInit, AfterViewInit, OnDestroy {
     // As regiões variáveis são apagadas antes de receber o conteúdo revisado.
     context.fillStyle = '#ffffff';
     context.fillRect(376, 24, 313, 43);
-    context.fillRect(399, 89, 290, 40);
+    context.fillRect(399, 89, 290, 80);
 
     context.save();
     context.beginPath();
@@ -563,9 +573,9 @@ export class SignaturesPage implements OnInit, AfterViewInit, OnDestroy {
     context.stroke();
 
     const name = this.form.employee_name.trim().toUpperCase() || 'NOME SOBRENOME';
-    let nameSize = 16;
+    let nameSize = 11 * 4 / 3;
     do {
-      context.font = '700 ' + nameSize + 'px Arial, sans-serif';
+      context.font = '700 ' + nameSize + 'px "Signature League Spartan"';
       if (context.measureText(name).width <= 300 || nameSize <= 11) break;
       nameSize -= 1;
     } while (nameSize > 11);
@@ -577,23 +587,17 @@ export class SignaturesPage implements OnInit, AfterViewInit, OnDestroy {
     context.save();
     context.translate(380, 0);
     context.scale(Math.min(1, 300 / nameWidth), 1);
-    context.lineJoin = 'round';
-    context.lineWidth = 1.3;
     context.fillStyle = '#7d383d';
-    context.strokeStyle = '#7d383d';
-    context.strokeText(firstName, 0, 44);
     context.fillText(firstName, 0, 44);
     context.fillStyle = '#484848';
-    context.strokeStyle = '#484848';
-    context.strokeText(surname, context.measureText(firstName).width, 44);
     context.fillText(surname, context.measureText(firstName).width, 44);
     context.restore();
 
-    context.font = '10px Arial, sans-serif';
-    context.fillStyle = '#595355';
+    context.font = (8.3 * 4 / 3) + 'px "Signature Poppins"';
+    context.fillStyle = '#737373';
     context.fillText((this.form.job_title.trim() || 'CARGO/FUNÇÃO').toUpperCase(), 380, 59, 300);
 
-    context.font = '10px Arial, sans-serif';
+    context.font = (7.4 * 4 / 3) + 'px "Signature Poppins"';
     context.fillStyle = '#380b0b';
     context.fillText(this.form.phone.trim() || '(21) 98476-3729', 400, 103, 286);
     context.fillText(
@@ -602,6 +606,8 @@ export class SignaturesPage implements OnInit, AfterViewInit, OnDestroy {
       123,
       286,
     );
+    context.fillText('Rua Buenos Aires, Nº 15 - SL 801 - Centro', 400, 144, 286);
+    context.fillText('www.centaurotelecom.com.br', 400, 165, 286);
     context.restore();
   }
 
