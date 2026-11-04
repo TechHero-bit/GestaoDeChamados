@@ -662,9 +662,9 @@ function assertGeneratedPng(file) {
   }
   const width = file.buffer.readUInt32BE(16);
   const height = file.buffer.readUInt32BE(20);
-  if (width !== 768 || height !== 200) {
+  if (!((width === 768 && height === 200) || (width === 2304 && height === 600))) {
     throw serviceError(
-      "validar as dimensões da assinatura (768 × 200 px)",
+      "validar as dimensões da assinatura (768 × 200 ou 2304 × 600 px)",
       null,
       400,
     );
@@ -742,7 +742,7 @@ export async function saveGeneratedSignature(
     phone: request.phone,
     corporate_email: request.corporate_email,
     template: "MODELO CENTAURO (17).png",
-    dimensions: { width: 768, height: 200 },
+    dimensions: { width: file.buffer.readUInt32BE(16), height: file.buffer.readUInt32BE(20) },
     source_dimensions: { width: 800, height: 200 },
   };
   const { error: artifactError } = await supabase

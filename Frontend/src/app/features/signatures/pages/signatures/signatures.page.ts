@@ -532,9 +532,11 @@ export class SignaturesPage implements OnInit, AfterViewInit, OnDestroy {
     const context = canvas.getContext('2d');
     if (!context) return;
 
-    context.clearRect(0, 0, 768, 200);
+    context.clearRect(0, 0, canvas.width, canvas.height);
     context.save();
-    context.scale(768 / 800, 1);
+    context.scale(canvas.width / 800, canvas.height / 200);
+    context.imageSmoothingEnabled = true;
+    context.imageSmoothingQuality = 'high';
     context.drawImage(this.template, 0, 0, 800, 200);
 
     // O PNG original mantém grafismos, logotipo, ícones e dados fixos.

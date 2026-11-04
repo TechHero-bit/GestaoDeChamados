@@ -92,6 +92,16 @@ test("duplicidade ativa e conta de usuário bloqueiam geração, sem upload", as
   assert.equal(existingUser.uploads.length, 0);
 });
 
+test("PNG em alta resolução preserva as dimensões no histórico", async () => {
+  const state = setup();
+  const buffer = Buffer.from(png);
+  buffer.writeUInt32BE(2304, 16);
+  buffer.writeUInt32BE(600, 20);
+  await saveGeneratedSignature(requestId, { ...generatedFile, buffer }, "admin-1", { supabase: state.supabase });
+  assert.equal(state.uploads.length, 1);
+  assert.deepEqual(state.artifacts[0].snapshot.dimensions, { width: 2304, height: 600 });
+});
+
 test("gerações oficiais sucessivas preservam cada versão no histórico", async () => {
   const state = setup();
   await saveGeneratedSignature(requestId, generatedFile, "admin-1", { supabase: state.supabase });
