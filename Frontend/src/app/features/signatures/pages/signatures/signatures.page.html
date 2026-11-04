@@ -71,10 +71,6 @@
             <option value="Gerada">Gerada</option>
           </select>
         </div>
-        <label class="flex items-center gap-2 text-xs text-text-secondary">
-          <input type="checkbox" [ngModel]="showArchived()" (ngModelChange)="showArchived.set($event); loadList()" />
-          Mostrar solicitações arquivadas
-        </label>
       </div>
 
       <div class="max-h-[calc(100vh-290px)] min-h-64 overflow-y-auto p-2">
@@ -117,7 +113,12 @@
                 <p class="mt-1 truncate text-xs text-text-secondary">
                   {{ request.job_title || 'Função pendente' }}
                 </p>
-                <p class="mt-2 text-[11px] text-text-muted">{{ formatDate(request.created_at) }}</p>
+                <div class="mt-2 flex flex-wrap items-center gap-x-2 gap-y-1">
+                  <p class="text-[11px] text-text-muted">{{ formatDate(request.created_at) }}</p>
+                  @if (request.archived_at) {
+                    <span class="text-[11px] font-medium text-text-secondary">Arquivada</span>
+                  }
+                </div>
               </button>
             }
           </div>

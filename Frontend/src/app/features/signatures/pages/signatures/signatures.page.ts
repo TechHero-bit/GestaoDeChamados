@@ -60,7 +60,6 @@ export class SignaturesPage implements OnInit, AfterViewInit, OnDestroy {
   readonly error = signal('');
   readonly success = signal('');
   readonly total = signal(0);
-  readonly showArchived = signal(false);
   readonly archiving = signal(false);
   readyToGenerate(): boolean {
     const request = this.selected();
@@ -194,7 +193,7 @@ export class SignaturesPage implements OnInit, AfterViewInit, OnDestroy {
   loadList(preferredId?: string): void {
     this.loading.set(true);
     this.error.set('');
-    this.service.list(this.statusFilter, this.search, this.showArchived()).subscribe({
+    this.service.list(this.statusFilter, this.search, true).subscribe({
       next: (response) => {
         this.requests.set(response.data);
         this.total.set(response.total);
@@ -332,7 +331,7 @@ export class SignaturesPage implements OnInit, AfterViewInit, OnDestroy {
       const archived = await firstValueFrom(this.service.archive(request.id, reason.trim()));
       this.success.set('Solicitação arquivada com rastreabilidade. Nenhum registro ou versão foi excluído.');
       this.refreshListRow(archived);
-      this.loadList(this.showArchived() ? archived.id : undefined);
+      this.loadList(archived.id);
     } catch (error) {
       this.error.set((error as Error).message);
     } finally {
