@@ -574,11 +574,13 @@ export class SignaturesPage implements OnInit, AfterViewInit, OnDestroy {
     context.lineWidth = 8;
     context.stroke();
 
+    context.save();
+    context.letterSpacing = '-0.25px';
     const name = this.form.employee_name.trim().toUpperCase() || 'NOME SOBRENOME';
     // Calibrado pelo PNG de 800 × 200 exportado do Canva.
     let nameSize = 17.5;
     do {
-      context.font = '700 ' + nameSize + 'px "Signature League Spartan"';
+      context.font = '800 ' + nameSize + 'px "Signature League Spartan"';
       if (context.measureText(name).width <= 300 || nameSize <= 11) break;
       nameSize -= 1;
     } while (nameSize > 11);
@@ -587,7 +589,6 @@ export class SignaturesPage implements OnInit, AfterViewInit, OnDestroy {
     const firstName = surnameStart < 0 ? name : name.slice(0, surnameStart);
     const surname = surnameStart < 0 ? '' : name.slice(surnameStart);
     const nameWidth = context.measureText(name).width;
-    context.save();
     context.translate(380, 0);
     context.scale(Math.min(1, 300 / nameWidth), 1);
     context.fillStyle = '#7d383d';
