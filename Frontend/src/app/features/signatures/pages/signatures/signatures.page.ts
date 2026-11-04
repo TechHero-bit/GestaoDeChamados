@@ -182,7 +182,7 @@ export class SignaturesPage implements OnInit, AfterViewInit, OnDestroy {
     this.template.onload = async () => {
       try {
         const fonts = await Promise.all([
-          new FontFace('Signature League Spartan', 'url(/assets/signatures/fonts/LeagueSpartan.ttf)', { weight: '700' }).load(),
+          new FontFace('Signature League Spartan', 'url(/assets/signatures/fonts/LeagueSpartan.ttf)', { weight: '100 900' }).load(),
           new FontFace('Signature Poppins', 'url(/assets/signatures/fonts/Poppins-Regular.ttf)').load(),
         ]);
         fonts.forEach((font) => document.fonts.add(font));
@@ -575,7 +575,8 @@ export class SignaturesPage implements OnInit, AfterViewInit, OnDestroy {
     context.stroke();
 
     const name = this.form.employee_name.trim().toUpperCase() || 'NOME SOBRENOME';
-    let nameSize = 11 * 4 / 3;
+    // Calibrado pelo PNG de 800 × 200 exportado do Canva.
+    let nameSize = 17.5;
     do {
       context.font = '700 ' + nameSize + 'px "Signature League Spartan"';
       if (context.measureText(name).width <= 300 || nameSize <= 11) break;
