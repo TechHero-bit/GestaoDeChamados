@@ -84,7 +84,8 @@ confirmação termina.
 - `storage_path`, service key e HTML original não são devolvidos ao frontend.
 - Uploads aceitam somente PNG, JPEG ou WebP com até 5 MiB.
 - O PNG final é validado por assinatura binária e por dimensão exata
-  (768 × 200 px) antes de ser persistido.
+  (2304 × 600 px; 768 × 200 px também é aceito por compatibilidade) antes de
+  ser persistido.
 - E-mails são comparados separadamente com usuários cadastrados e solicitações
   ativas (não arquivadas). Conta existente sempre bloqueia onboarding; uma
   solicitação duplicada pode ser resolvida com arquivamento auditável.
@@ -113,11 +114,22 @@ e as assinaturas pessoais dos administradores não são modificadas.
 O arquivo original permanece sem alteração em
 `Frontend/public/assets/signatures/modelo-centauro-17.png`. Sua dimensão real
 é **800 × 200 px**. O canvas desenha fundo, foto e textos no mesmo sistema de
-coordenadas do original e reduz toda a composição horizontalmente para a
-exportação exigida pelo módulo, **768 × 200 px**. A faixa gráfica, logotipo,
-ícones, endereço e site continuam provenientes do PNG; apenas foto, nome,
-função, telefone e e-mail são substituídos. A referência
+coordenadas do original e exporta em **2304 × 600 px**, mantendo a proporção
+final de 768 × 200 px. A faixa gráfica e o logotipo continuam provenientes do
+PNG. Os ícones de contato, redes sociais e serviços são redesenhados pelo SVG
+local `Frontend/public/assets/signatures/icones-centauro.svg`, diretamente na
+resolução da exportação. As fontes também são renderizadas nessa resolução.
+A referência
 `MODELO CENTAURO (18).png` também mede 800 × 200 px.
+
+A fotografia é lida do arquivo original, recortada centralmente e reduzida
+em etapas com suavização de alta qualidade até 558 × 558 px. O resultado é
+reutilizado nas atualizações da prévia, sem compressão JPEG intermediária.
+Fotos com lado menor abaixo de 558 px recebem um aviso para envio do original;
+a geração continua permitida. Ampliar uma foto pequena não recupera detalhes
+ausentes. Para melhorar também o logotipo e a faixa gráfica em grandes
+ampliações, será necessário substituir o modelo por um original vetorial ou
+por uma exportação de maior resolução.
 
 ## Rotas
 

@@ -20,6 +20,7 @@ import {
   canDownloadSignaturePreview,
   canGenerateOfficialSignature,
 } from '../../../../core/utils/signature-readiness';
+import { prepareSignaturePhoto, signaturePhotoWarning } from '../../../../core/utils/signature-photo';
 
 interface SignatureForm {
   employee_name: string;
@@ -37,9 +38,11 @@ interface SignatureForm {
 export class SignaturesPage implements OnInit, AfterViewInit, OnDestroy {
   private readonly service = inject(SignatureRequestService);
   private readonly template = new Image();
+  private vectorIcons = new Image();
   private readonly objectUrls = new Set<string>();
-  private photoImage: HTMLImageElement | null = null;
+  private photoImage: HTMLCanvasElement | null = null;
   private imageLoadVersion = 0;
+  private readonly templateLoadError = signal('');
 
   @ViewChild('signatureCanvas')
   private canvasRef?: ElementRef<HTMLCanvasElement>;
@@ -136,7 +139,7 @@ export class SignaturesPage implements OnInit, AfterViewInit, OnDestroy {
     }
     if (this.photoLoading()) return 'Carregando a fotografia para a prévia de teste…';
     if (!this.photoReady()) return 'Selecione ou envie uma fotografia válida para testar a imagem.';
-    if (!this.templateReady()) return 'Carregando o modelo visual da assinatura…';
+    if (!this.templateReady()) return this.templateLoadError() || 'Carregando o modelo visual da assinatura…';
     return '';
   }
 
@@ -161,7 +164,7 @@ export class SignaturesPage implements OnInit, AfterViewInit, OnDestroy {
     if (!request.photo_attachment_id && !request.has_manual_photo) return 'Selecione ou envie uma fotografia.';
     if (this.photoLoading()) return 'Carregando a fotografia selecionada…';
     if (!this.photoReady()) return 'A fotografia não pôde ser carregada. Consulte o aviso acima ou envie outra foto.';
-    if (!this.templateReady()) return 'Carregando o modelo visual da assinatura…';
+    if (!this.templateReady()) return this.templateLoadError() || 'Carregando o modelo visual da assinatura…';
     return '';
   }
 
@@ -181,21 +184,26 @@ export class SignaturesPage implements OnInit, AfterViewInit, OnDestroy {
   ngAfterViewInit(): void {
     this.template.onload = async () => {
       try {
-        const fonts = await Promise.all([
+        const [spartan, poppins, icons] = await Promise.all([
           new FontFace('Signature League Spartan', 'url(/assets/signatures/fonts/LeagueSpartan.ttf)', { weight: '100 900' }).load(),
           new FontFace('Signature Poppins', 'url(/assets/signatures/fonts/Poppins-Regular.ttf)').load(),
+          this.loadImage('/assets/signatures/icones-centauro.svg'),
         ]);
-        fonts.forEach((font) => document.fonts.add(font));
+        document.fonts.add(spartan);
+        document.fonts.add(poppins);
+        this.vectorIcons = icons;
         this.templateReady.set(this.template.naturalWidth === 800 && this.template.naturalHeight === 200);
         await this.drawPreview();
       } catch {
         this.templateReady.set(false);
-        this.error.set('Não foi possível carregar as fontes da assinatura. Atualize a página para tentar novamente.');
+        this.templateLoadError.set('Não foi possível carregar as fontes ou os ícones da assinatura. Atualize a página para tentar novamente.');
+        this.error.set(this.templateLoadError());
       }
     };
     this.template.onerror = () => {
       this.templateReady.set(false);
-      this.error.set('O modelo visual obrigatório não pôde ser carregado.');
+      this.templateLoadError.set('O modelo visual obrigatório não pôde ser carregado.');
+      this.error.set(this.templateLoadError());
     };
     this.template.src = '/assets/signatures/modelo-centauro-17.png';
   }
@@ -496,14 +504,10 @@ export class SignaturesPage implements OnInit, AfterViewInit, OnDestroy {
           try {
             const loaded = await this.loadImage(url);
             if (version !== this.imageLoadVersion) return;
-            this.photoImage = loaded;
+            this.photoImage = prepareSignaturePhoto(loaded);
             this.photoReady.set(true);
             this.photoLoading.set(false);
-            this.photoWarning.set(
-              loaded.naturalWidth / loaded.naturalHeight > 1.7
-                ? 'A imagem selecionada é muito larga para um retrato e pode ser uma assinatura de e-mail inteira. Confira a prévia ou envie uma foto de rosto.'
-                : '',
-            );
+            this.photoWarning.set(signaturePhotoWarning(loaded.naturalWidth, loaded.naturalHeight));
             this.error.set('');
             await this.drawPreview();
             if (photoSuccessMessage) this.success.set(photoSuccessMessage);
@@ -538,8 +542,9 @@ export class SignaturesPage implements OnInit, AfterViewInit, OnDestroy {
     context.imageSmoothingEnabled = true;
     context.imageSmoothingQuality = 'high';
     context.drawImage(this.template, 0, 0, 800, 200);
+    context.drawImage(this.vectorIcons, 0, 0, 800, 200);
 
-    // O PNG original mantém grafismos, logotipo, ícones e dados fixos.
+    // O PNG original mantém os grafismos e o logotipo; os ícones são vetoriais.
     // As regiões variáveis são apagadas antes de receber o conteúdo revisado.
     context.fillStyle = '#ffffff';
     context.fillRect(376, 24, 313, 43);
@@ -550,19 +555,7 @@ export class SignaturesPage implements OnInit, AfterViewInit, OnDestroy {
     context.arc(232, 100, 93, 0, Math.PI * 2);
     context.clip();
     if (this.photoImage) {
-      const image = this.photoImage;
-      const side = Math.min(image.naturalWidth, image.naturalHeight);
-      context.drawImage(
-        image,
-        (image.naturalWidth - side) / 2,
-        (image.naturalHeight - side) / 2,
-        side,
-        side,
-        139,
-        7,
-        186,
-        186,
-      );
+      context.drawImage(this.photoImage, 139, 7, 186, 186);
     } else {
       context.fillStyle = '#f2f4f4';
       context.fillRect(139, 7, 186, 186);

@@ -1,0 +1,102 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="200" viewBox="0 0 800 200">
+  <title>Ícones vetoriais da assinatura Centauro</title>
+  <defs>
+    <g id="hex" fill="#fff" stroke="#7d383d" stroke-width=".85">
+      <path d="M-6.5-11.3H6.5L13 0 6.5 11.3H-6.5L-13 0Z"/>
+    </g>
+    <g id="contact"><circle r="7.2" fill="#7d383d"/></g>
+    <path id="phone" d="M-3.5-4.5-5-3c-.4 3 4 7.4 7 7l1.6-1.5L1 0-.4 1.2A8 8 0 0 1-2.2-.6L-1-2Z"/>
+    <g id="person" fill="currentColor" stroke="none">
+      <circle cy="-2.6" r="1.7"/><path d="M-3 3V1.6C-3-.8 3-.8 3 1.6V3Z"/>
+    </g>
+  </defs>
+
+  <!-- Recobre somente os pictogramas rasterizados do modelo. -->
+  <path fill="#fff" d="M699 18H766V181H699ZM378 91H396V169H378Z"/>
+  <g stroke="#fff" stroke-width=".9" stroke-linecap="round" stroke-linejoin="round" fill="none">
+    <g transform="translate(387 100)"><use href="#contact"/><use href="#phone" fill="#fff" stroke="none" transform="scale(.85)"/></g>
+    <g transform="translate(387 120)"><use href="#contact"/><rect x="-4" y="-3" width="8" height="6" rx=".4"/><path d="m-4-3 4 3 4-3"/></g>
+    <g transform="translate(387 140.5)"><use href="#contact"/><path d="m-4.8-.4 4.8-4 4.8 4M-3.4-1.5v5h6.8v-5M-1.1 3.5V.4h2.2v3.1"/></g>
+    <g transform="translate(387 160.5)"><use href="#contact"/><circle r="4.4"/><ellipse rx="2" ry="4.4"/><path d="M-4.4 0h8.8M-3.7-2.3h7.4M-3.7 2.3h7.4"/></g>
+  </g>
+
+  <!-- Redes sociais sobre a faixa original, sem alterar o logotipo. -->
+  <g transform="translate(0 3)">
+  <g fill="#380b0b">
+    <circle cx="40" cy="130" r="9.3"/><circle cx="65" cy="130" r="9.3"/><circle cx="89" cy="130" r="9.3"/>
+  </g>
+  <g fill="#ded8d8">
+    <circle cx="40" cy="130" r="7.5"/><circle cx="65" cy="130" r="7.5"/><circle cx="89" cy="130" r="7.5"/>
+  </g>
+  <path fill="#7d383d" d="M41 136v-5h1.7l.3-2H41v-1.1c0-.7.2-1 1-1h1v-1.8a9 9 0 0 0-1.5-.1c-1.8 0-2.7 1-2.7 2.7v1.3h-1.5v2h1.5v5Z"/>
+  <g transform="translate(65 130)" stroke="#7d383d" stroke-width="1.1" fill="none">
+    <rect x="-4.5" y="-4.5" width="9" height="9" rx="2.5"/><circle r="2.2"/><circle cx="2.7" cy="-2.7" r=".6" fill="#7d383d" stroke="none"/>
+  </g>
+  <g fill="#7d383d" transform="translate(89 130)">
+    <circle cx="-3.3" cy="-3.6" r="1.1"/><path d="M-4.3-1.5h2V4h-2ZM-.8-1.5h1.9v.8C3-2.4 5-1.5 5 .8V4H3V1c0-1.6-1.8-1.5-1.8.1V4h-2Z"/>
+  </g>
+  </g>
+
+  <g fill="none" stroke="#7d383d" stroke-width="1" stroke-linecap="round" stroke-linejoin="round">
+    <g transform="translate(716 33)">
+      <use href="#hex"/>
+      <path stroke="#888" d="M2-7h6M5-7v3l-3 2"/>
+      <path fill="#7d383d" d="m-7 0 9-3 3 5-9 3Z"/>
+      <path d="m-7 0-2 2 2 3 3-1M0 5v2h4"/>
+    </g>
+    <g transform="translate(747 33)">
+      <use href="#hex"/>
+      <path stroke="#888" stroke-width="1.6" d="M-6 1v-2a6 6 0 0 1 12 0v2"/>
+      <path fill="#888" stroke="none" d="M-6-1h2v5h-2ZM4-1h2v5H4Z"/>
+      <path d="M6 3v3H2"/><circle cx="1" cy="6" r="1" fill="#7d383d"/>
+      <path stroke="#888" d="m-8-4-1-1M-6-7l-.5-1.5"/>
+    </g>
+    <g transform="translate(716 59.5)">
+      <use href="#hex"/>
+      <path stroke="#888" stroke-width="1.5" d="m-1-7 1.5 2 2-.1 1 2 2 .8-.2 2.2 1.1 1.6-1.2 1.9-2.1.1L2 5.5 0 5l-1.5 1-1.8-1.2-.2-2.1-2-1-.2-2 1.3-1.5-.4-2.1 2-.9Z"/>
+      <path fill="#7d383d" stroke="none" d="M-3-4a3.5 3.5 0 0 0 3.8 4.9l5 5a1.1 1.1 0 0 0 1.6-1.6l-5-5A3.5 3.5 0 0 0-2-4l2 2-1.5 1.5Z"/>
+    </g>
+    <g transform="translate(747 59.5)">
+      <use href="#hex"/><g stroke="#888"><path d="m0 0-4-5M0 0l6-3M0 0l5 5M0 0l-6 4M0 0v7"/></g>
+      <circle r="2"/><circle cx="-5" cy="-6" r="2"/><circle cx="7" cy="-4" r="2"/><circle cx="6" cy="6" r="2"/><circle cx="-7" cy="5" r="2"/><circle cy="8" r="1.3"/>
+    </g>
+    <g transform="translate(716 86)">
+      <use href="#hex"/>
+      <g stroke="#888"><rect x="-5" y="-6" width="9" height="11" rx=".5"/><path d="M-3-3h5M-3-1h1M1-1h1M-3 1h1M1 1h1M-3 3h1"/></g>
+      <path fill="#fff" d="M1 3V0c0-1 1.5-1 1.5 0v3l2 1 1 2-1 3H1L-1 6V4c0-1 1-1 2-1Z"/>
+    </g>
+    <g transform="translate(747 86)">
+      <use href="#hex"/><path d="M0-8v3M-6 0a6 6 0 0 1 12 0l2 2H-8Z"/>
+      <path stroke="#888" d="M-2 4h4M-5 5l-2 2M0 6v2M5 5l2 2"/>
+    </g>
+    <g transform="translate(716 112.5)">
+      <use href="#hex"/><path d="M-7-4a5 5 0 0 0 4 8l-1-3-2 1-1-3 2-1ZM5-5a4 4 0 0 1 2 7L5 4 4 1l2-2-1-1"/>
+      <path stroke="#888" d="M7-7a7 7 0 0 1 2 11M-1 0h3m-1-1 1 1-1 1"/>
+    </g>
+    <g transform="translate(747 112.5)">
+      <use href="#hex"/>
+      <g stroke="#888"><rect x="-3" y="-7" width="9" height="14" rx=".8"/><path d="M0 1h4M0 3h4M0 5h4"/></g>
+      <rect x="-7" y="-4" width="3" height="12" rx="1"/><path d="M-5.5-4v-2H-3"/><path fill="#484848" stroke="none" d="M-1-5h2v3h-2ZM2-5h2v3H2Z"/>
+    </g>
+    <g transform="translate(716 139)">
+      <use href="#hex"/>
+      <g stroke="#888"><ellipse cx="-2" cy="-5" rx="6" ry="2" fill="#888"/><path d="M-8-5v4c0 3 12 3 12 0v-4M-8-1v4c0 3 12 3 12 0M-8 3v3c0 2 5 3 8 2"/></g>
+      <path fill="#7d383d" stroke="#fff" stroke-width=".7" d="m4 0 4 1v3c0 3-4 5-4 5S0 7 0 4V1Z"/>
+    </g>
+    <g transform="translate(747 139)">
+      <use href="#hex"/>
+      <g color="#7d383d"><use href="#person" y="-4" transform="scale(1.1)"/><use href="#person" x="-6" y="6"/><use href="#person" y="6"/><use href="#person" x="6" y="6"/></g>
+      <path stroke="#888" d="M-6 0v-3M6 0v-3"/>
+    </g>
+    <g transform="translate(716 165.5)">
+      <use href="#hex"/>
+      <path stroke="#888" d="M-7-7v14H7ZM-4 0v4h4M0-2l3-6 4 10M2-5h3M4-8v-2"/>
+      <path d="m-3-1 7 8M-1 4l1-1M1 6l1-1"/>
+    </g>
+    <g transform="translate(747 165.5)">
+      <use href="#hex"/>
+      <g stroke="#888" stroke-width="1.3"><path d="M-8-4a12 12 0 0 1 16 0M-5.5-1a8 8 0 0 1 11 0M-3 2a4 4 0 0 1 6 0"/></g>
+      <circle cy="5" r="1.2" fill="#888" stroke="none"/><path d="M-6 5v3M6 5v3" stroke-width="1.8"/>
+    </g>
+  </g>
+</svg>
