@@ -124,9 +124,14 @@ Uma cópia local da marca, com preenchimento branco, está em
 `Frontend/public/assets/signatures/logo-centauro-oficial.svg`; seus caminhos
 também estão incorporados no modelo, sem referências externas ou bitmaps.
 A moldura da foto, os pontos decorativos e a linha divisória são vetoriais.
-Os ícones de contato, redes sociais e serviços são desenhados pelo SVG
-local `Frontend/public/assets/signatures/icones-centauro.svg`, diretamente na
-resolução da exportação. As fontes também são renderizadas nessa resolução.
+O arquivo local `Frontend/public/assets/signatures/icones-centauro.svg`
+combina os ícones vetoriais de redes sociais e serviços com os quatro ícones
+originais de contato (telefone, e-mail, endereço e site). Os contatos preservam
+o recorte PNG sem alterações do modelo 17, nas coordenadas x=378, y=91,
+18 × 78 px, idêntico pixel a pixel à referência `CHARLES MADEIRA.png`.
+O recorte está incorporado no SVG para manter desenho, cores e proporções
+exatos, sem depender de outro carregamento. As fontes são renderizadas na
+resolução da exportação.
 A referência
 `MODELO CENTAURO (18).png` também mede 800 × 200 px.
 
@@ -135,8 +140,9 @@ em etapas com suavização de alta qualidade até 558 × 558 px. O resultado é
 reutilizado nas atualizações da prévia, sem compressão JPEG intermediária.
 Fotos com lado menor abaixo de 558 px recebem um aviso para envio do original;
 a geração continua permitida. Ampliar uma foto pequena não recupera detalhes
-ausentes. Logotipo, faixa gráfica e ícones são renderizados diretamente na
-resolução final, sem ampliar o PNG original. O histórico das novas gerações
+ausentes. Logotipo, faixa gráfica e ícones vetoriais são renderizados diretamente
+na resolução final; os contatos reutilizam o desenho rasterizado da referência.
+O histórico das novas gerações
 identifica o modelo como `modelo-centauro-hd.svg`; versões antigas são
 preservadas.
 

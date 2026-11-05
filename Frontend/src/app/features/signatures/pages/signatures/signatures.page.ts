@@ -544,7 +544,7 @@ export class SignaturesPage implements OnInit, AfterViewInit, OnDestroy {
     context.drawImage(this.template, 0, 0, 800, 200);
     context.drawImage(this.vectorIcons, 0, 0, 800, 200);
 
-    // Modelo, logotipo e ícones vetoriais são desenhados na resolução de saída.
+    // O modelo é vetorial; os contatos incorporados preservam o desenho original.
     // As regiões variáveis são apagadas antes de receber o conteúdo revisado.
     context.fillStyle = '#ffffff';
     context.fillRect(376, 24, 313, 43);

@@ -1,11 +1,9 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="800" height="200" viewBox="0 0 800 200">
-  <title>Ícones vetoriais da assinatura Centauro</title>
+  <title>Ícones da assinatura Centauro</title>
   <defs>
     <g id="hex" fill="#fff" stroke="#7d383d" stroke-width=".85">
       <path d="M-6.5-11.3H6.5L13 0 6.5 11.3H-6.5L-13 0Z"/>
     </g>
-    <g id="contact"><circle r="7.2" fill="#7d383d"/></g>
-    <path id="phone" d="M-3.5-4.5-5-3c-.4 3 4 7.4 7 7l1.6-1.5L1 0-.4 1.2A8 8 0 0 1-2.2-.6L-1-2Z"/>
     <g id="person" fill="currentColor" stroke="none">
       <circle cy="-2.6" r="1.7"/><path d="M-3 3V1.6C-3-.8 3-.8 3 1.6V3Z"/>
     </g>
@@ -13,12 +11,9 @@
 
   <!-- Recobre somente os pictogramas rasterizados do modelo. -->
   <path fill="#fff" d="M699 18H766V181H699ZM378 91H396V169H378Z"/>
-  <g stroke="#fff" stroke-width=".9" stroke-linecap="round" stroke-linejoin="round" fill="none">
-    <g transform="translate(387 100)"><use href="#contact"/><use href="#phone" fill="#fff" stroke="none" transform="scale(.85)"/></g>
-    <g transform="translate(387 120)"><use href="#contact"/><rect x="-4" y="-3" width="8" height="6" rx=".4"/><path d="m-4-3 4 3 4-3"/></g>
-    <g transform="translate(387 140.5)"><use href="#contact"/><path d="m-4.8-.4 4.8-4 4.8 4M-3.4-1.5v5h6.8v-5M-1.1 3.5V.4h2.2v3.1"/></g>
-    <g transform="translate(387 160.5)"><use href="#contact"/><circle r="4.4"/><ellipse rx="2" ry="4.4"/><path d="M-4.4 0h8.8M-3.7-2.3h7.4M-3.7 2.3h7.4"/></g>
-  </g>
+  <!-- Contatos originais: recorte sem alterações do modelo 17, idêntico à referência CHARLES MADEIRA.png. -->
+  <image id="contact-icons" x="378" y="91" width="18" height="78" href="data:image/png;base64,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"/>
+
 
   <!-- Redes sociais sobre a faixa original, sem alterar o logotipo. -->
   <g transform="translate(0 3)">
