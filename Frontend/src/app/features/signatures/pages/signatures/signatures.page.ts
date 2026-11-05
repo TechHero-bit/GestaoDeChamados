@@ -205,7 +205,7 @@ export class SignaturesPage implements OnInit, AfterViewInit, OnDestroy {
       this.templateLoadError.set('O modelo visual obrigatório não pôde ser carregado.');
       this.error.set(this.templateLoadError());
     };
-    this.template.src = '/assets/signatures/modelo-centauro-17.png';
+    this.template.src = '/assets/signatures/modelo-centauro-hd.svg';
   }
 
   loadList(preferredId?: string): void {
@@ -544,7 +544,7 @@ export class SignaturesPage implements OnInit, AfterViewInit, OnDestroy {
     context.drawImage(this.template, 0, 0, 800, 200);
     context.drawImage(this.vectorIcons, 0, 0, 800, 200);
 
-    // O PNG original mantém os grafismos e o logotipo; os ícones são vetoriais.
+    // Modelo, logotipo e ícones vetoriais são desenhados na resolução de saída.
     // As regiões variáveis são apagadas antes de receber o conteúdo revisado.
     context.fillStyle = '#ffffff';
     context.fillRect(376, 24, 313, 43);
@@ -570,7 +570,7 @@ export class SignaturesPage implements OnInit, AfterViewInit, OnDestroy {
     context.save();
     context.letterSpacing = '-0.25px';
     const name = this.form.employee_name.trim().toUpperCase() || 'NOME SOBRENOME';
-    // Calibrado pelo PNG de 800 × 200 exportado do Canva.
+    // Mantém as coordenadas do modelo original de 800 × 200 exportado do Canva.
     let nameSize = 17.5;
     do {
       context.font = '800 ' + nameSize + 'px "Signature League Spartan"';

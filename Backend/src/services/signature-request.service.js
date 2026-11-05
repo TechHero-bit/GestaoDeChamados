@@ -741,7 +741,7 @@ export async function saveGeneratedSignature(
     job_title: request.job_title,
     phone: request.phone,
     corporate_email: request.corporate_email,
-    template: "MODELO CENTAURO (17).png",
+    template: "modelo-centauro-hd.svg",
     dimensions: { width: file.buffer.readUInt32BE(16), height: file.buffer.readUInt32BE(20) },
     source_dimensions: { width: 800, height: 200 },
   };

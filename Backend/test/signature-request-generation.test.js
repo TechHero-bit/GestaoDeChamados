@@ -100,6 +100,7 @@ test("PNG em alta resolução preserva as dimensões no histórico", async () =>
   await saveGeneratedSignature(requestId, { ...generatedFile, buffer }, "admin-1", { supabase: state.supabase });
   assert.equal(state.uploads.length, 1);
   assert.deepEqual(state.artifacts[0].snapshot.dimensions, { width: 2304, height: 600 });
+  assert.equal(state.artifacts[0].snapshot.template, 'modelo-centauro-hd.svg');
 });
 
 test("gerações oficiais sucessivas preservam cada versão no histórico", async () => {

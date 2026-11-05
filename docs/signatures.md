@@ -115,8 +115,16 @@ O arquivo original permanece sem alteração em
 `Frontend/public/assets/signatures/modelo-centauro-17.png`. Sua dimensão real
 é **800 × 200 px**. O canvas desenha fundo, foto e textos no mesmo sistema de
 coordenadas do original e exporta em **2304 × 600 px**, mantendo a proporção
-final de 768 × 200 px. A faixa gráfica e o logotipo continuam provenientes do
-PNG. Os ícones de contato, redes sociais e serviços são redesenhados pelo SVG
+final de 768 × 200 px. O modelo usado na composição é
+`Frontend/public/assets/signatures/modelo-centauro-hd.svg`, inteiramente
+vetorial: o grafismo bordô foi reconstruído a partir dos contornos do modelo
+original e o logotipo vem do SVG público oficial da Centauro
+(`https://www.centaurotelecom.com.br/logo.svg`, obtido em 05/11/2026).
+Uma cópia local da marca, com preenchimento branco, está em
+`Frontend/public/assets/signatures/logo-centauro-oficial.svg`; seus caminhos
+também estão incorporados no modelo, sem referências externas ou bitmaps.
+A moldura da foto, os pontos decorativos e a linha divisória são vetoriais.
+Os ícones de contato, redes sociais e serviços são desenhados pelo SVG
 local `Frontend/public/assets/signatures/icones-centauro.svg`, diretamente na
 resolução da exportação. As fontes também são renderizadas nessa resolução.
 A referência
@@ -127,9 +135,10 @@ em etapas com suavização de alta qualidade até 558 × 558 px. O resultado é
 reutilizado nas atualizações da prévia, sem compressão JPEG intermediária.
 Fotos com lado menor abaixo de 558 px recebem um aviso para envio do original;
 a geração continua permitida. Ampliar uma foto pequena não recupera detalhes
-ausentes. Para melhorar também o logotipo e a faixa gráfica em grandes
-ampliações, será necessário substituir o modelo por um original vetorial ou
-por uma exportação de maior resolução.
+ausentes. Logotipo, faixa gráfica e ícones são renderizados diretamente na
+resolução final, sem ampliar o PNG original. O histórico das novas gerações
+identifica o modelo como `modelo-centauro-hd.svg`; versões antigas são
+preservadas.
 
 ## Rotas
 

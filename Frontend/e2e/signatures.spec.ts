@@ -99,3 +99,11 @@ test('falha no SVG impede exportação incompleta', async ({ page }) => {
   await expect(page.getByRole('button', { name: 'Baixar prévia de teste' })).toBeDisabled();
   await expect(page.getByRole('button', { name: 'Gerar e baixar PNG' })).toBeDisabled();
 });
+
+test('falha no modelo vetorial impede exportação sem a marca', async ({ page }) => {
+  await page.route('**/assets/signatures/modelo-centauro-hd.svg', (route) => route.abort());
+  await mockSignature(page);
+  await expect(page.getByRole('status').filter({ hasText: 'Prévia de teste indisponível:' })).toContainText('O modelo visual obrigatório não pôde ser carregado');
+  await expect(page.getByRole('button', { name: 'Baixar prévia de teste' })).toBeDisabled();
+  await expect(page.getByRole('button', { name: 'Gerar e baixar PNG' })).toBeDisabled();
+});
